@@ -67,6 +67,68 @@ app.get("/test-daily-summary", async (req, res) => {
   }
 });
 
+// Debug endpoint to inspect raw ClickUp data
+app.get("/debug-clickup-data", async (req, res) => {
+  try {
+    console.log("🔍 Debug: Fetching raw ClickUp data...");
+    const clickupApiToken = process.env.CLICKUP_API_TOKEN;
+    const listId = process.env.LEAVE_LIST_ID || "901810375140";
+
+    if (!clickupApiToken) {
+      throw new Error("ClickUp API token not configured");
+    }
+
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`📍 List ID: ${listId}`);
+    console.log(
+      `🕐 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+    );
+
+    const response = await axios.get(
+      `https://api.clickup.com/api/v2/list/${listId}/task`,
+      {
+        headers: {
+          Authorization: clickupApiToken,
+          "Content-Type": "application/json",
+        },
+        params: {
+          include_closed: true,
+          subtasks: false,
+        },
+      }
+    );
+
+    const tasks = response.data.tasks || [];
+
+    // Return debug data
+    res.json({
+      success: true,
+      environment: process.env.NODE_ENV || "development",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      listId: listId,
+      totalTasks: tasks.length,
+      serverTime: new Date().toISOString(),
+      sampleTasks: tasks.slice(0, 3).map((task) => ({
+        id: task.id,
+        name: task.name,
+        due_date: task.due_date,
+        custom_fields:
+          task.custom_fields?.map((field) => ({
+            name: field.name,
+            type: field.type,
+            value: field.value,
+          })) || [],
+      })),
+      timestamp: new Date().toLocaleString(),
+    });
+  } catch (error) {
+    console.error("❌ Error in debug endpoint:", error);
+    res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
+  }
+});
+
 // Test weekly summary endpoint
 app.get("/test-weekly-summary", async (req, res) => {
   try {
@@ -502,8 +564,23 @@ async function sendDailyLeaveSummary() {
       throw new Error("ClickUp API token not configured");
     }
 
-    // Get TODAY's date range
+    // Debug environment info
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(
+      `🕐 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+    );
+    console.log(`📍 List ID being used: ${listId}`);
+
+    // Get TODAY's date range - use Sri Lanka timezone for consistency
     const today = new Date();
+    console.log(`🕐 Current server time: ${today.toISOString()}`);
+    console.log(`🕐 Current local time: ${today.toLocaleString()}`);
+    console.log(
+      `🕐 Current Sri Lanka time: ${today.toLocaleString("en-US", {
+        timeZone: "Asia/Colombo",
+      })}`
+    );
+
     const startOfToday = new Date(
       today.getFullYear(),
       today.getMonth(),
@@ -518,6 +595,8 @@ async function sendDailyLeaveSummary() {
       59
     );
 
+    console.log(`📅 Date range - Start: ${startOfToday.toISOString()}`);
+    console.log(`📅 Date range - End: ${endOfToday.toISOString()}`);
     console.log(
       `📅 Checking for employees on leave TODAY (${today.toLocaleDateString()})`
     );
@@ -540,28 +619,46 @@ async function sendDailyLeaveSummary() {
     const tasks = response.data.tasks || [];
     console.log(`📋 Found ${tasks.length} total tasks in list`);
 
+    // Debug: Show sample task structure
+    if (tasks.length > 0) {
+      console.log(
+        `🔍 Sample task structure:`,
+        JSON.stringify(tasks[0], null, 2)
+      );
+    }
+
     // Filter tasks for employees on leave TODAY
     const todayLeaveTasks = [];
 
     for (const task of tasks) {
       let isOnLeaveToday = false;
+      console.log(`\n🔍 Checking task ${task.id}: "${task.name}"`);
 
       // Check 1: Main task date field (ClickUp's built-in date)
       if (task.due_date) {
         const dueDate = new Date(parseInt(task.due_date));
+        console.log(
+          `   📅 Due date: ${dueDate.toISOString()} (${dueDate.toLocaleDateString()})`
+        );
         if (dueDate >= startOfToday && dueDate <= endOfToday) {
           isOnLeaveToday = true;
           console.log(
-            `✅ Task ${
-              task.id
-            } - Main date matches today: ${dueDate.toLocaleDateString()}`
+            `   ✅ Due date matches today: ${dueDate.toLocaleDateString()}`
           );
+        } else {
+          console.log(`   ❌ Due date does not match today`);
         }
+      } else {
+        console.log(`   📅 No due_date field found`);
       }
 
       // Check 2: Custom date fields (From/To dates)
       if (task.custom_fields && task.custom_fields.length > 0) {
+        console.log(`   🎯 Found ${task.custom_fields.length} custom fields:`);
         for (const field of task.custom_fields) {
+          console.log(
+            `      Field: "${field.name}" (type: ${field.type}) = ${field.value}`
+          );
           if (field.type === "date" && field.value) {
             try {
               let fieldDate;
@@ -572,24 +669,34 @@ async function sendDailyLeaveSummary() {
               }
 
               if (fieldDate && !isNaN(fieldDate.getTime())) {
+                console.log(
+                  `      📅 Parsed date: ${fieldDate.toISOString()} (${fieldDate.toLocaleDateString()})`
+                );
                 if (fieldDate >= startOfToday && fieldDate <= endOfToday) {
                   isOnLeaveToday = true;
                   console.log(
-                    `✅ Task ${task.id} - Custom date field "${
-                      field.name
-                    }" matches today: ${fieldDate.toLocaleDateString()}`
+                    `      ✅ Custom date field "${field.name}" matches today!`
+                  );
+                } else {
+                  console.log(
+                    `      ❌ Custom date field "${field.name}" does not match today`
                   );
                 }
+              } else {
+                console.log(`      ⚠️ Could not parse date: ${field.value}`);
               }
             } catch (dateError) {
               console.log(
-                `⚠️ Could not parse date from field "${field.name}": ${field.value}`
+                `      ❌ Error parsing date from field "${field.name}": ${field.value} - ${dateError.message}`
               );
             }
           }
         }
+      } else {
+        console.log(`   📋 No custom fields found for this task`);
       }
 
+      console.log(`   📊 Task ${task.id} on leave today: ${isOnLeaveToday}`);
       if (isOnLeaveToday) {
         todayLeaveTasks.push(task);
       }
@@ -1169,6 +1276,9 @@ app.listen(PORT, () => {
   );
   console.log(
     `🧪 Test monthly summary: http://localhost:${PORT}/test-monthly-summary`
+  );
+  console.log(
+    `🔍 Debug ClickUp data: http://localhost:${PORT}/debug-clickup-data`
   );
   console.log(
     `📅 Check leave on specific date: http://localhost:${PORT}/check-leave-on-date/YYYY-MM-DD`
