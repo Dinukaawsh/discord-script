@@ -18,72 +18,6 @@ const notifiedTasks = new Set();
 app.use(cors());
 app.use(express.json());
 
-// ClickUp webhook endpoint
-app.post("/webhook/clickup", async (req, res) => {
-  try {
-    console.log("📡 Webhook received from ClickUp");
-    console.log("📋 Request body:", JSON.stringify(req.body, null, 2));
-
-    const { event, task, user } = req.body;
-
-    console.log(`🎯 Event: ${event}`);
-    console.log(`📝 Task: ${task?.name || "No task data"}`);
-    console.log(`👤 User: ${user?.username || "No user data"}`);
-
-    // Check if this is a task creation event (leave form submission)
-    if (event === "task_created" || event === "task_updated") {
-      console.log("✅ Valid event detected");
-
-      // Check if the task is in the leaves form list
-      if (isLeaveFormTask(task)) {
-        console.log("✅ Leave form task detected");
-        await sendDiscordNotification(task, user);
-        console.log(
-          `Discord notification sent for leave request: ${task.name}`
-        );
-      } else {
-        console.log("❌ Task is not a leave form task");
-      }
-    } else {
-      console.log(`❌ Event '${event}' not supported`);
-    }
-
-    res.status(200).json({ success: true });
-  } catch (error) {
-    console.error("❌ Error processing webhook:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// ClickUp API polling endpoint
-app.get("/check-leave-requests", async (req, res) => {
-  try {
-    console.log("🔍 Checking for new leave requests...");
-    const newTasks = await checkForNewLeaveRequests();
-
-    if (newTasks.length > 0) {
-      console.log(`✅ Found ${newTasks.length} new leave request(s)`);
-      for (const task of newTasks) {
-        await sendDiscordNotification(task, {
-          username: task.creator?.username || "Unknown User",
-        });
-        console.log(`📱 Discord notification sent for: ${task.name}`);
-      }
-    } else {
-      console.log("📭 No new leave requests found");
-    }
-
-    res.json({
-      success: true,
-      newTasks: newTasks.length,
-      message: `Checked for new leave requests at ${new Date().toLocaleString()}`,
-    });
-  } catch (error) {
-    console.error("❌ Error checking leave requests:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
 // Manual trigger endpoints for testing scheduled tasks
 app.get("/check-now", async (req, res) => {
   try {
@@ -149,6 +83,22 @@ app.get("/test-weekly-summary", async (req, res) => {
   }
 });
 
+// Test monthly summary endpoint
+app.get("/test-monthly-summary", async (req, res) => {
+  try {
+    console.log("🧪 Testing monthly summary...");
+    await sendMonthlyLeaveSummary();
+    res.json({
+      success: true,
+      message: "Monthly summary test triggered successfully",
+      timestamp: new Date().toLocaleString(),
+    });
+  } catch (error) {
+    console.error("❌ Error testing monthly summary:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Helper function to find list IDs (add this after the existing functions)
 app.get("/find-lists", async (req, res) => {
   try {
@@ -210,6 +160,163 @@ app.get("/find-lists", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error finding lists:", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// New endpoint to check for employees on leave on a specific date
+app.get("/check-leave-on-date/:date", async (req, res) => {
+  try {
+    const { date } = req.params;
+    const clickupApiToken = process.env.CLICKUP_API_TOKEN;
+    const listId = process.env.LEAVE_LIST_ID || "901810375140";
+
+    if (!clickupApiToken) {
+      throw new Error("ClickUp API token not configured");
+    }
+
+    // Parse the date parameter (expecting YYYY-MM-DD format)
+    const targetDate = new Date(date);
+    if (isNaN(targetDate.getTime())) {
+      return res
+        .status(400)
+        .json({ error: "Invalid date format. Use YYYY-MM-DD" });
+    }
+
+    const startOfDate = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      targetDate.getDate()
+    );
+    const endOfDate = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      targetDate.getDate(),
+      23,
+      59,
+      59
+    );
+
+    console.log(`🔍 Checking for employees on leave on ${date}...`);
+
+    // Get tasks from the specific list
+    const response = await axios.get(
+      `https://api.clickup.com/api/v2/list/${listId}/task`,
+      {
+        headers: {
+          Authorization: clickupApiToken,
+          "Content-Type": "application/json",
+        },
+        params: {
+          limit: 100,
+          order_by: "created",
+          reverse: true,
+        },
+      }
+    );
+
+    if (response.status !== 200) {
+      throw new Error(`ClickUp API error: ${response.status}`);
+    }
+
+    const tasks = response.data.tasks || [];
+
+    // Filter for tasks where the leave date matches the target date
+    const leaveTasks = tasks.filter((task) => {
+      if (task.custom_fields && task.custom_fields.length > 0) {
+        for (const field of task.custom_fields) {
+          if (field.type === "date" && field.value) {
+            try {
+              const timestamp = parseInt(field.value);
+              if (!isNaN(timestamp)) {
+                const leaveDate = new Date(timestamp);
+                return leaveDate >= startOfDate && leaveDate <= endOfDate;
+              }
+            } catch (error) {
+              console.log(
+                `⚠️ Could not parse date field ${field.name}: ${field.value}`
+              );
+            }
+          }
+        }
+      }
+      return false;
+    });
+
+    // Format the response
+    const employeesOnLeave = leaveTasks.map((task) => {
+      let employeeName = task.creator?.username || "Unknown";
+      let leaveType = "Leave";
+      let fromDate = "";
+      let toDate = "";
+      let reason = "";
+
+      if (task.custom_fields && task.custom_fields.length > 0) {
+        for (const field of task.custom_fields) {
+          if (field.name.toLowerCase().includes("name")) {
+            employeeName = field.value;
+          } else if (field.name.toLowerCase().includes("type")) {
+            if (
+              field.type === "drop_down" &&
+              field.type_config &&
+              field.type_config.options
+            ) {
+              const option = field.type_config.options.find(
+                (opt) =>
+                  opt.id === field.value || opt.orderindex === field.value
+              );
+              leaveType = option ? option.name : field.value;
+            } else {
+              leaveType = field.value;
+            }
+          } else if (field.name.toLowerCase().includes("from")) {
+            try {
+              const timestamp = parseInt(field.value);
+              if (!isNaN(timestamp)) {
+                fromDate = new Date(timestamp).toLocaleDateString();
+              }
+            } catch (error) {
+              fromDate = field.value;
+            }
+          } else if (field.name.toLowerCase().includes("to")) {
+            try {
+              const timestamp = parseInt(field.value);
+              if (!isNaN(timestamp)) {
+                toDate = new Date(timestamp).toLocaleDateString();
+              }
+            } catch (error) {
+              toDate = field.value;
+            }
+          } else if (field.name.toLowerCase().includes("reason")) {
+            reason = field.value;
+          }
+        }
+      }
+
+      return {
+        employee: employeeName,
+        leaveType: leaveType,
+        fromDate: fromDate,
+        toDate: toDate,
+        reason: reason,
+        taskUrl: task.url,
+        taskName: task.name,
+      };
+    });
+
+    console.log(
+      `📅 Found ${employeesOnLeave.length} employees on leave on ${date}`
+    );
+
+    res.json({
+      success: true,
+      date: date,
+      employeesOnLeave: employeesOnLeave,
+      count: employeesOnLeave.length,
+      message: `Found ${employeesOnLeave.length} employees on leave on ${date}`,
+    });
+  } catch (error) {
+    console.error("❌ Error checking leave on date:", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -387,7 +494,7 @@ async function checkForNewLeaveRequests() {
 // Function to send daily leave summary
 async function sendDailyLeaveSummary() {
   try {
-    console.log("📊 Generating daily leave summary...");
+    console.log("📊 Generating daily leave summary for TODAY...");
     const clickupApiToken = process.env.CLICKUP_API_TOKEN;
     const listId = process.env.LEAVE_LIST_ID || "901810375140";
 
@@ -395,30 +502,27 @@ async function sendDailyLeaveSummary() {
       throw new Error("ClickUp API token not configured");
     }
 
-    // Get YESTERDAY's date range (not today)
+    // Get TODAY's date range
     const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1); // Go back 1 day
-
-    const startOfYesterday = new Date(
-      yesterday.getFullYear(),
-      yesterday.getMonth(),
-      yesterday.getDate()
+    const startOfToday = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
     );
-    const endOfYesterday = new Date(
-      yesterday.getFullYear(),
-      yesterday.getMonth(),
-      yesterday.getDate(),
+    const endOfToday = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
       23,
       59,
       59
     );
 
     console.log(
-      `📅 Checking for leave requests from YESTERDAY (${startOfYesterday.toLocaleDateString()}) to (${endOfYesterday.toLocaleDateString()})`
+      `📅 Checking for employees on leave TODAY (${today.toLocaleDateString()})`
     );
 
-    // Get tasks from the specific list
+    // Get all tasks from the list
     const response = await axios.get(
       `https://api.clickup.com/api/v2/list/${listId}/task`,
       {
@@ -427,70 +531,93 @@ async function sendDailyLeaveSummary() {
           "Content-Type": "application/json",
         },
         params: {
-          limit: 100,
-          order_by: "created",
-          reverse: true,
+          include_closed: true,
+          subtasks: false,
         },
       }
     );
-
-    if (response.status !== 200) {
-      throw new Error(`ClickUp API error: ${response.status}`);
-    }
 
     const tasks = response.data.tasks || [];
     console.log(`📋 Found ${tasks.length} total tasks in list`);
 
-    // Filter for tasks created YESTERDAY
-    const yesterdaysTasks = tasks.filter((task) => {
-      if (task.date_created) {
-        const taskDate = new Date(parseInt(task.date_created));
-        return taskDate >= startOfYesterday && taskDate <= endOfYesterday;
+    // Filter tasks for employees on leave TODAY
+    const todayLeaveTasks = [];
+
+    for (const task of tasks) {
+      let isOnLeaveToday = false;
+
+      // Check 1: Main task date field (ClickUp's built-in date)
+      if (task.due_date) {
+        const dueDate = new Date(parseInt(task.due_date));
+        if (dueDate >= startOfToday && dueDate <= endOfToday) {
+          isOnLeaveToday = true;
+          console.log(
+            `✅ Task ${
+              task.id
+            } - Main date matches today: ${dueDate.toLocaleDateString()}`
+          );
+        }
       }
-      return false;
-    });
 
-    console.log(
-      `📅 Found ${yesterdaysTasks.length} leave requests submitted YESTERDAY`
-    );
+      // Check 2: Custom date fields (From/To dates)
+      if (task.custom_fields && task.custom_fields.length > 0) {
+        for (const field of task.custom_fields) {
+          if (field.type === "date" && field.value) {
+            try {
+              let fieldDate;
+              if (typeof field.value === "string") {
+                fieldDate = new Date(field.value);
+              } else if (typeof field.value === "number") {
+                fieldDate = new Date(parseInt(field.value));
+              }
 
-    if (yesterdaysTasks.length === 0) {
-      await sendDiscordNotification(
-        {
-          name: "Daily Leave Summary - Yesterday",
-          custom_fields: [],
-          url: "",
-          status: { status: "No submissions yesterday" },
-          creator: { username: "System" },
-        },
-        { username: "System" },
-        true
-      ); // true = is summary
-      return;
+              if (fieldDate && !isNaN(fieldDate.getTime())) {
+                if (fieldDate >= startOfToday && fieldDate <= endOfToday) {
+                  isOnLeaveToday = true;
+                  console.log(
+                    `✅ Task ${task.id} - Custom date field "${
+                      field.name
+                    }" matches today: ${fieldDate.toLocaleDateString()}`
+                  );
+                }
+              }
+            } catch (dateError) {
+              console.log(
+                `⚠️ Could not parse date from field "${field.name}": ${field.value}`
+              );
+            }
+          }
+        }
+      }
+
+      if (isOnLeaveToday) {
+        todayLeaveTasks.push(task);
+      }
     }
 
-    // Send summary notification
-    await sendDiscordNotification(
-      {
-        name: "Daily Leave Summary - Yesterday",
-        custom_fields: [],
-        url: "",
-        status: { status: "Summary" },
-        creator: { username: "System" },
-      },
-      { username: "System" },
-      true,
-      yesterdaysTasks
-    ); // true = is summary, yesterdaysTasks = summary data
+    console.log(`👥 Found ${todayLeaveTasks.length} employees on leave TODAY`);
+
+    if (todayLeaveTasks.length > 0) {
+      // Send Discord notification
+      await sendDiscordNotification(
+        { name: "Daily Leave Summary - Today" }, // Special identifier for daily summary
+        { username: "System" }, // System user for summaries
+        true, // isSummary = true
+        todayLeaveTasks // Pass all tasks as summary data
+      );
+      console.log("📱 Daily leave summary sent to Discord");
+    } else {
+      console.log("ℹ️ No employees on leave today");
+    }
   } catch (error) {
-    console.error("❌ Error generating daily summary:", error);
+    console.error("❌ Error in daily leave summary:", error);
   }
 }
 
 // Function to send weekly leave summary
 async function sendWeeklyLeaveSummary() {
   try {
-    console.log("📊 Generating weekly leave summary...");
+    console.log("📊 Generating weekly leave summary for THIS WEEK...");
     const clickupApiToken = process.env.CLICKUP_API_TOKEN;
     const listId = process.env.LEAVE_LIST_ID || "901810375140";
 
@@ -498,22 +625,22 @@ async function sendWeeklyLeaveSummary() {
       throw new Error("ClickUp API token not configured");
     }
 
-    // Get LAST WEEK's date range (Monday to Friday of previous week)
+    // Get THIS WEEK's date range (Monday to Friday of current week)
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
 
-    // Calculate last week's Monday
-    const lastWeekMonday = new Date(today);
-    lastWeekMonday.setDate(today.getDate() - dayOfWeek - 7); // Go back to last week's Monday
-    lastWeekMonday.setHours(0, 0, 0, 0);
+    // Calculate this week's Monday
+    const thisWeekMonday = new Date(today);
+    thisWeekMonday.setDate(today.getDate() - dayOfWeek + 1); // Go to this week's Monday
+    thisWeekMonday.setHours(0, 0, 0, 0);
 
-    // Calculate last week's Friday
-    const lastWeekFriday = new Date(lastWeekMonday);
-    lastWeekFriday.setDate(lastWeekMonday.getDate() + 4); // Friday is 4 days after Monday
-    lastWeekFriday.setHours(23, 59, 59, 999);
+    // Calculate this week's Friday
+    const thisWeekFriday = new Date(thisWeekMonday);
+    thisWeekFriday.setDate(thisWeekMonday.getDate() + 4); // Friday is 4 days after Monday
+    thisWeekFriday.setHours(23, 59, 59, 999);
 
     console.log(
-      `📅 Checking for leave requests from LAST WEEK: ${lastWeekMonday.toLocaleDateString()} to ${lastWeekFriday.toLocaleDateString()}`
+      `📅 Checking for leave requests from THIS WEEK: ${thisWeekMonday.toLocaleDateString()} to ${thisWeekFriday.toLocaleDateString()}`
     );
 
     // Get tasks from the specific list
@@ -539,26 +666,41 @@ async function sendWeeklyLeaveSummary() {
     const tasks = response.data.tasks || [];
     console.log(`📋 Found ${tasks.length} total tasks in list`);
 
-    // Filter for tasks created LAST WEEK
-    const lastWeekTasks = tasks.filter((task) => {
-      if (task.date_created) {
-        const taskDate = new Date(parseInt(task.date_created));
-        return taskDate >= lastWeekMonday && taskDate <= lastWeekFriday;
+    // Filter for tasks where the leave date is THIS WEEK
+    const thisWeekTasks = tasks.filter((task) => {
+      if (task.custom_fields && task.custom_fields.length > 0) {
+        for (const field of task.custom_fields) {
+          if (field.type === "date" && field.value) {
+            try {
+              const timestamp = parseInt(field.value);
+              if (!isNaN(timestamp)) {
+                const leaveDate = new Date(timestamp);
+                return (
+                  leaveDate >= thisWeekMonday && leaveDate <= thisWeekFriday
+                );
+              }
+            } catch (error) {
+              console.log(
+                `⚠️ Could not parse date field ${field.name}: ${field.value}`
+              );
+            }
+          }
+        }
       }
       return false;
     });
 
     console.log(
-      `📅 Found ${lastWeekTasks.length} leave requests submitted LAST WEEK`
+      `📅 Found ${thisWeekTasks.length} leave requests for THIS WEEK`
     );
 
-    if (lastWeekTasks.length === 0) {
+    if (thisWeekTasks.length === 0) {
       await sendDiscordNotification(
         {
-          name: "Weekly Leave Summary - Last Week",
+          name: "Weekly Leave Summary - This Week",
           custom_fields: [],
           url: "",
-          status: { status: "No submissions last week" },
+          status: { status: "No leave requests this week" },
           creator: { username: "System" },
         },
         { username: "System" },
@@ -570,7 +712,7 @@ async function sendWeeklyLeaveSummary() {
     // Send summary notification
     await sendDiscordNotification(
       {
-        name: "Weekly Leave Summary - Last Week",
+        name: "Weekly Leave Summary - This Week",
         custom_fields: [],
         url: "",
         status: { status: "Summary" },
@@ -578,10 +720,131 @@ async function sendWeeklyLeaveSummary() {
       },
       { username: "System" },
       true,
-      lastWeekTasks
-    ); // true = is summary, lastWeekTasks = summary data
+      thisWeekTasks
+    ); // true = is summary, thisWeekTasks = summary data
   } catch (error) {
     console.error("❌ Error generating weekly summary:", error);
+  }
+}
+
+// Function to send monthly leave summary
+async function sendMonthlyLeaveSummary() {
+  try {
+    console.log("📊 Generating monthly leave summary for THIS MONTH...");
+    const clickupApiToken = process.env.CLICKUP_API_TOKEN;
+    const listId = process.env.LEAVE_LIST_ID || "901810375140";
+
+    if (!clickupApiToken) {
+      throw new Error("ClickUp API token not configured");
+    }
+
+    // Get THIS MONTH's date range (1st to last day of current month)
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endOfMonth = new Date(
+      today.getFullYear(),
+      today.getMonth() + 1,
+      0,
+      23,
+      59,
+      59
+    );
+
+    console.log(
+      `📅 Checking for leave requests from THIS MONTH: ${startOfMonth.toLocaleDateString()} to ${endOfMonth.toLocaleDateString()}`
+    );
+
+    // Get all tasks from the list
+    const response = await axios.get(
+      `https://api.clickup.com/api/v2/list/${listId}/task`,
+      {
+        headers: {
+          Authorization: clickupApiToken,
+          "Content-Type": "application/json",
+        },
+        params: {
+          include_closed: true,
+          subtasks: false,
+        },
+      }
+    );
+
+    const tasks = response.data.tasks || [];
+    console.log(`📋 Found ${tasks.length} total tasks in list`);
+
+    // Filter tasks for employees on leave THIS MONTH
+    const thisMonthLeaveTasks = [];
+
+    for (const task of tasks) {
+      let isOnLeaveThisMonth = false;
+
+      // Check 1: Main task date field (ClickUp's built-in date)
+      if (task.due_date) {
+        const dueDate = new Date(parseInt(task.due_date));
+        if (dueDate >= startOfMonth && dueDate <= endOfMonth) {
+          isOnLeaveThisMonth = true;
+          console.log(
+            `✅ Task ${
+              task.id
+            } - Main date matches this month: ${dueDate.toLocaleDateString()}`
+          );
+        }
+      }
+
+      // Check 2: Custom date fields (From/To dates)
+      if (task.custom_fields && task.custom_fields.length > 0) {
+        for (const field of task.custom_fields) {
+          if (field.type === "date" && field.value) {
+            try {
+              let fieldDate;
+              if (typeof field.value === "string") {
+                fieldDate = new Date(field.value);
+              } else if (typeof field.value === "number") {
+                fieldDate = new Date(parseInt(field.value));
+              }
+
+              if (fieldDate && !isNaN(fieldDate.getTime())) {
+                if (fieldDate >= startOfMonth && fieldDate <= endOfMonth) {
+                  isOnLeaveThisMonth = true;
+                  console.log(
+                    `✅ Task ${task.id} - Custom date field "${
+                      field.name
+                    }" matches this month: ${fieldDate.toLocaleDateString()}`
+                  );
+                }
+              }
+            } catch (dateError) {
+              console.log(
+                `⚠️ Could not parse date from field "${field.name}": ${field.value}`
+              );
+            }
+          }
+        }
+      }
+
+      if (isOnLeaveThisMonth) {
+        thisMonthLeaveTasks.push(task);
+      }
+    }
+
+    console.log(
+      `👥 Found ${thisMonthLeaveTasks.length} employees on leave THIS MONTH`
+    );
+
+    if (thisMonthLeaveTasks.length > 0) {
+      // Send Discord notification
+      await sendDiscordNotification(
+        { name: "Monthly Leave Summary - This Month" }, // Special identifier for monthly summary
+        { username: "System" }, // System user for summaries
+        true, // isSummary = true
+        thisMonthLeaveTasks // Pass all tasks as summary data
+      );
+      console.log("📱 Monthly leave summary sent to Discord");
+    } else {
+      console.log("ℹ️ No employees on leave this month");
+    }
+  } catch (error) {
+    console.error("❌ Error in monthly leave summary:", error);
   }
 }
 
@@ -605,10 +868,10 @@ async function sendDiscordNotification(
 
     if (isSummary) {
       if (task.name.includes("Daily")) {
-        embedTitle = "📊 Daily Leave Summary - Yesterday";
+        embedTitle = "📊 Daily Leave Summary - Today";
         embedColor = 0x0099ff; // Blue color
-      } else if (task.name.includes("Weekly")) {
-        embedTitle = "📈 Weekly Leave Summary - Last Week";
+      } else if (task.name.includes("Monthly")) {
+        embedTitle = "📈 Monthly Leave Summary - This Month";
         embedColor = 0xff6600; // Orange color
       }
     }
@@ -617,261 +880,253 @@ async function sendDiscordNotification(
       title: embedTitle,
       color: embedColor,
       description: "", // We'll build this dynamically
-      fields: [
-        {
-          name: "👤 Employee",
-          value: user?.username || task.creator?.username || "Unknown User",
-          inline: true,
-        },
-        {
-          name: "📅 Submission Date",
-          value:
-            new Date().toLocaleDateString() +
-            " " +
-            new Date().toLocaleTimeString(),
-          inline: true,
-        },
-      ],
+      fields: [],
       timestamp: new Date().toISOString(),
       footer: {
         text: "ClickUp Leave Management System",
       },
     };
 
-    // Build personalized description paragraph
-    let descriptionParts = [];
-    let employeeName =
-      user?.username || task.creator?.username || "Unknown User";
-    let timeOffType = "";
-    let fromDate = "";
-    let toDate = "";
-    let reason = "";
-
-    // Add custom fields if they exist
-    if (task.custom_fields && task.custom_fields.length > 0) {
-      console.log("🎯 Adding custom fields to Discord notification:");
-      task.custom_fields.forEach((field) => {
-        let fieldValue = "";
-
-        // Handle different field types
-        if (
-          field.type === "labels" &&
-          field.value &&
-          Array.isArray(field.value)
-        ) {
-          // For label fields, find the actual label text
-          if (field.type_config && field.type_config.options) {
-            const selectedLabels = field.value.map((id) => {
-              const option = field.type_config.options.find(
-                (opt) => opt.id === id
-              );
-              return option ? option.label : id;
-            });
-            fieldValue = selectedLabels.join(", ");
-          } else {
-            fieldValue = field.value.join(", ");
-          }
-        } else if (
-          field.type === "drop_down" &&
-          field.value !== null &&
-          field.value !== undefined
-        ) {
-          // For drop-down fields, find the actual option name
-          if (field.type_config && field.type_config.options) {
-            const option = field.type_config.options.find(
-              (opt) => opt.id === field.value || opt.orderindex === field.value
-            );
-            fieldValue = option ? option.name : field.value;
-          } else {
-            fieldValue = field.value;
-          }
-        } else if (field.type === "date" && field.value) {
-          // For date fields, convert timestamp to readable date
-          try {
-            const timestamp = parseInt(field.value);
-            if (!isNaN(timestamp)) {
-              fieldValue = new Date(timestamp).toLocaleDateString();
-            } else {
-              // Try parsing as a date string
-              const dateObj = new Date(field.value);
-              if (!isNaN(dateObj.getTime())) {
-                fieldValue = dateObj.toLocaleDateString();
-              } else {
-                fieldValue = field.value;
-              }
-            }
-          } catch (error) {
-            console.log(
-              `⚠️ Could not parse date field ${field.name}: ${field.value}`
-            );
-            fieldValue = field.value;
-          }
-        } else if (field.value && field.value !== "" && field.value !== null) {
-          fieldValue = field.value.toString();
-        }
-
-        if (fieldValue && fieldValue !== "") {
-          console.log(`   ${field.name}: ${fieldValue}`);
-
-          // Store values for description
-          if (field.name.toLowerCase().includes("name")) {
-            employeeName = fieldValue;
-          } else if (
-            field.name.toLowerCase().includes("time off type") ||
-            field.name.toLowerCase().includes("type")
-          ) {
-            timeOffType = fieldValue;
-          } else if (field.name.toLowerCase().includes("from")) {
-            fromDate = fieldValue;
-          } else if (field.name.toLowerCase().includes("to")) {
-            toDate = fieldValue;
-          } else if (field.name.toLowerCase().includes("reason")) {
-            reason = fieldValue;
-          }
-
-          // Skip adding Reason field to Discord (but keep it for description)
-          if (!field.name.toLowerCase().includes("reason")) {
-            embed.fields.push({
-              name: `📋 ${field.name}`,
-              value: fieldValue,
-              inline: true,
-            });
-          }
-        }
-      });
-    }
-
-    // Build the personalized description
-    if (timeOffType || fromDate || toDate || reason) {
-      let description = `Hello! **${employeeName}** has submitted a leave request.`;
-
-      if (timeOffType) {
-        description += `\n\n**Type:** ${timeOffType}`;
-      }
-
-      if (fromDate && toDate) {
-        if (fromDate === toDate) {
-          description += `\n**Date:** ${fromDate}`;
-        } else {
-          description += `\n**Period:** ${fromDate} to ${toDate}`;
-        }
-      } else if (fromDate) {
-        description += `\n**From:** ${fromDate}`;
-      } else if (toDate) {
-        description += `\n**To:** ${toDate}`;
-      }
-
-      if (reason) {
-        description += `\n\n**Reason:** ${reason}`;
-      }
-
-      embed.description = description;
-    }
-
-    // Add other useful fields
-    if (task.due_date) {
-      console.log(
-        `🔍 Processing due_date: ${
-          task.due_date
-        } (type: ${typeof task.due_date})`
-      );
-    }
-
-    if (task.description) {
-      embed.fields.push({
-        name: "📄 Description",
-        value:
-          task.description.length > 1024
-            ? task.description.substring(0, 1021) + "..."
-            : task.description,
-        inline: false,
-      });
-    }
-
-    if (task.due_date) {
-      try {
-        // Handle ClickUp's Unix timestamp format (milliseconds)
-        const timestamp = parseInt(task.due_date);
-        if (!isNaN(timestamp)) {
-          const dueDate = new Date(timestamp);
-          embed.fields.push({
-            name: "⏰ Due Date",
-            value: dueDate.toLocaleDateString(),
-            inline: true,
-          });
-        } else {
-          // If it's already a date string, try to parse it directly
-          const dueDate = new Date(task.due_date);
-          if (!isNaN(dueDate.getTime())) {
-            embed.fields.push({
-              name: "⏰ Due Date",
-              value: dueDate.toLocaleDateString(),
-              inline: true,
-            });
-          }
-        }
-      } catch (error) {
-        console.log(`⚠️ Could not parse due date: ${task.due_date}`);
-      }
-    }
-
-    if (task.status) {
-      embed.fields.push({
-        name: "📊 Status",
-        value: task.status.status || task.status,
-        inline: true,
-      });
-    }
-
-    // Add ClickUp link at the end (only for individual requests, not summaries)
-    if (!isSummary && task.url) {
-      embed.fields.push({
-        name: "🔗 ClickUp Link",
-        value: `[View Full Request](${task.url})`,
-        inline: false,
-      });
-    }
-
     // Handle summary notifications
     if (isSummary && summaryTasks && summaryTasks.length > 0) {
       // Add summary statistics
       embed.fields.push({
         name: "📊 Summary Statistics",
-        value: `Total Requests: **${summaryTasks.length}**`,
+        value: `Total Employees on Leave: **${summaryTasks.length}**`,
         inline: false,
       });
 
-      // Group by employee
-      const employeeCounts = {};
+      // Group by employee and show their leave details
+      const employeeLeaveDetails = [];
       summaryTasks.forEach((summaryTask) => {
-        const employee = summaryTask.creator?.username || "Unknown";
-        employeeCounts[employee] = (employeeCounts[employee] || 0) + 1;
+        // Try to get employee name from multiple sources
+        let employeeName = "Unknown";
+
+        // Source 1: Custom field with "name" in it
+        if (summaryTask.custom_fields && summaryTask.custom_fields.length > 0) {
+          for (const field of summaryTask.custom_fields) {
+            if (field.name.toLowerCase().includes("name") && field.value) {
+              employeeName = field.value;
+              break;
+            }
+          }
+        }
+
+        // Source 2: Creator username (fallback)
+        if (employeeName === "Unknown" && summaryTask.creator?.username) {
+          employeeName = summaryTask.creator.username;
+        }
+
+        // Source 3: Task name (if it contains employee info)
+        if (employeeName === "Unknown" && summaryTask.name) {
+          employeeName = summaryTask.name;
+        }
+
+        let leaveType = "Leave";
+        let fromDate = "";
+        let toDate = "";
+
+        // Extract leave type and dates from custom fields
+        if (summaryTask.custom_fields && summaryTask.custom_fields.length > 0) {
+          for (const field of summaryTask.custom_fields) {
+            if (
+              field.type === "drop_down" &&
+              field.name.toLowerCase().includes("type")
+            ) {
+              if (field.type_config && field.type_config.options) {
+                const option = field.type_config.options.find(
+                  (opt) =>
+                    opt.id === field.value || opt.orderindex === field.value
+                );
+                leaveType = option ? option.name : field.value;
+              } else {
+                leaveType = field.value;
+              }
+            } else if (field.name.toLowerCase().includes("from")) {
+              try {
+                const timestamp = parseInt(field.value);
+                if (!isNaN(timestamp)) {
+                  fromDate = new Date(timestamp).toLocaleDateString();
+                }
+              } catch (error) {
+                fromDate = field.value;
+              }
+            } else if (field.name.toLowerCase().includes("to")) {
+              try {
+                const timestamp = parseInt(field.value);
+                if (!isNaN(timestamp)) {
+                  toDate = new Date(timestamp).toLocaleDateString();
+                }
+              } catch (error) {
+                toDate = field.value;
+              }
+            }
+          }
+        }
+
+        // Build the leave detail string
+        let leaveDetail = `• **${employeeName}** - ${leaveType}`;
+        if (fromDate && toDate) {
+          if (fromDate === toDate) {
+            leaveDetail += ` (${fromDate})`;
+          } else {
+            leaveDetail += ` (${fromDate} to ${toDate})`;
+          }
+        } else if (fromDate) {
+          leaveDetail += ` (${fromDate})`;
+        } else if (toDate) {
+          leaveDetail += ` (${toDate})`;
+        }
+
+        employeeLeaveDetails.push(leaveDetail);
       });
 
-      const employeeSummary = Object.entries(employeeCounts)
-        .map(([employee, count]) => `• **${employee}**: ${count} request(s)`)
-        .join("\n");
-
-      if (employeeSummary) {
+      if (employeeLeaveDetails.length > 0) {
+        const summaryType = task.name.includes("Daily")
+          ? "Employees on Leave Today"
+          : "Employees on Leave This Month";
         embed.fields.push({
-          name: "👥 Employee Breakdown",
-          value: employeeSummary,
+          name: `👥 ${summaryType}`,
+          value: employeeLeaveDetails.join("\n"),
           inline: false,
         });
       }
 
-      // Add recent requests (last 5)
-      const recentRequests = summaryTasks.slice(0, 5);
-      const recentList = recentRequests
-        .map(
-          (req) => `• **${req.creator?.username || "Unknown"}** - ${req.name}`
-        )
-        .join("\n");
+      // Add task details for monthly summary
+      if (task.name.includes("Monthly")) {
+        const taskDetails = summaryTasks
+          .slice(0, 10)
+          .map((req) => {
+            let employeeName = "Unknown";
 
-      if (recentList) {
+            // Try to get employee name from custom fields first
+            if (req.custom_fields && req.custom_fields.length > 0) {
+              for (const field of req.custom_fields) {
+                if (field.name.toLowerCase().includes("name") && field.value) {
+                  employeeName = field.value;
+                  break;
+                }
+              }
+            }
+
+            // Fallback to creator username
+            if (employeeName === "Unknown" && req.creator?.username) {
+              employeeName = req.creator.username;
+            }
+
+            return `• **${employeeName}** - ${req.name}`;
+          })
+          .join("\n");
+
+        if (taskDetails) {
+          embed.fields.push({
+            name: "📋 Leave Request Details",
+            value: taskDetails,
+            inline: false,
+          });
+        }
+      }
+    } else {
+      // Handle individual task notifications (not summaries)
+      embed.fields.push({
+        name: "👤 Employee",
+        value: user?.username || task.creator?.username || "Unknown User",
+        inline: true,
+      });
+
+      embed.fields.push({
+        name: "📅 Submission Date",
+        value:
+          new Date().toLocaleDateString() +
+          " " +
+          new Date().toLocaleTimeString(),
+        inline: true,
+      });
+
+      // Add custom fields if they exist
+      if (task.custom_fields && task.custom_fields.length > 0) {
+        console.log("🎯 Adding custom fields to Discord notification:");
+        task.custom_fields.forEach((field) => {
+          let fieldValue = "";
+
+          // Handle different field types
+          if (
+            field.type === "labels" &&
+            field.value &&
+            Array.isArray(field.value)
+          ) {
+            if (field.type_config && field.type_config.options) {
+              const selectedLabels = field.value.map((id) => {
+                const option = field.type_config.options.find(
+                  (opt) => opt.id === id
+                );
+                return option ? option.label : id;
+              });
+              fieldValue = selectedLabels.join(", ");
+            } else {
+              fieldValue = field.value.join(", ");
+            }
+          } else if (
+            field.type === "drop_down" &&
+            field.value !== null &&
+            field.value !== undefined
+          ) {
+            if (field.type_config && field.type_config.options) {
+              const option = field.type_config.options.find(
+                (opt) =>
+                  opt.id === field.value || opt.orderindex === field.value
+              );
+              fieldValue = option ? option.name : field.value;
+            } else {
+              fieldValue = field.value;
+            }
+          } else if (field.type === "date" && field.value) {
+            try {
+              const timestamp = parseInt(field.value);
+              if (!isNaN(timestamp)) {
+                fieldValue = new Date(timestamp).toLocaleDateString();
+              } else {
+                const dateObj = new Date(field.value);
+                if (!isNaN(dateObj.getTime())) {
+                  fieldValue = dateObj.toLocaleDateString();
+                } else {
+                  fieldValue = field.value;
+                }
+              }
+            } catch (error) {
+              console.log(
+                `⚠️ Could not parse date field ${field.name}: ${field.value}`
+              );
+              fieldValue = field.value;
+            }
+          } else if (
+            field.value &&
+            field.value !== "" &&
+            field.value !== null
+          ) {
+            fieldValue = field.value.toString();
+          }
+
+          if (fieldValue && fieldValue !== "") {
+            console.log(`   ${field.name}: ${fieldValue}`);
+
+            // Skip adding Reason field to Discord (but keep it for description)
+            if (!field.name.toLowerCase().includes("reason")) {
+              embed.fields.push({
+                name: `📋 ${field.name}`,
+                value: fieldValue,
+                inline: true,
+              });
+            }
+          }
+        });
+      }
+
+      // Add ClickUp link
+      if (task.url) {
         embed.fields.push({
-          name: "📋 Recent Requests",
-          value: recentList,
+          name: "🔗 ClickUp Link",
+          value: `[View Full Request](${task.url})`,
           inline: false,
         });
       }
@@ -890,8 +1145,10 @@ async function sendDiscordNotification(
     });
 
     // Mark this task as notified to prevent duplicates
-    notifiedTasks.add(task.id);
-    console.log(`✅ Task ${task.id} marked as notified`);
+    if (task.id) {
+      notifiedTasks.add(task.id);
+      console.log(`✅ Task ${task.id} marked as notified`);
+    }
   } catch (error) {
     console.error("Error sending Discord notification:", error);
     throw error;
@@ -906,36 +1163,33 @@ app.get("/health", (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(
-    `📡 ClickUp webhook endpoint: http://localhost:${PORT}/webhook/clickup`
-  );
-  console.log(
-    `🔍 ClickUp API polling endpoint: http://localhost:${PORT}/check-leave-requests`
-  );
   console.log(`💚 Health check: http://localhost:${PORT}/health`);
   console.log(
     `🧪 Test daily summary: http://localhost:${PORT}/test-daily-summary`
   );
   console.log(
-    `🧪 Test weekly summary: http://localhost:${PORT}/test-weekly-summary`
+    `🧪 Test monthly summary: http://localhost:${PORT}/test-monthly-summary`
   );
+  console.log(
+    `📅 Check leave on specific date: http://localhost:${PORT}/check-leave-on-date/YYYY-MM-DD`
+  );
+  console.log(`🔍 Find ClickUp lists: http://localhost:${PORT}/find-lists`);
 
   console.log("⏰ Production schedules configured:");
-  console.log("⏰ Daily Summary: 10:00 AM daily (Yesterday's data)");
-  console.log("⏰ Additional Check: 2:00 PM daily (Yesterday's data)");
-  console.log("⏰ Weekly Summary: Friday 6:00 PM (Last week's data)");
-
-  // Schedule daily check at 10:00 AM (shows yesterday's submissions)
+  console.log("⏰ Daily Summary: 10:00 AM daily (Today's Leave)");
   console.log(
-    "⏰ Scheduling daily leave request check at 10:00 AM (Yesterday's Summary)..."
+    "⏰ Monthly Summary: 30th of every month at 6:00 PM (This month's leave)"
+  );
+
+  // Schedule daily check at 10:00 AM (shows today's leave)
+  console.log(
+    "⏰ Scheduling daily leave check at 10:00 AM (Today's Leave Summary)..."
   );
   cron.schedule(
     "0 10 * * *", // 10:00 AM daily
     async () => {
       try {
-        console.log(
-          "🕙 10:00 AM - Yesterday's leave request summary triggered..."
-        );
+        console.log("🕙 10:00 AM - Today's leave summary triggered...");
         await sendDailyLeaveSummary();
       } catch (error) {
         console.error("❌ Error in daily scheduled check:", error);
@@ -946,20 +1200,20 @@ app.listen(PORT, () => {
     }
   );
 
-  // Schedule additional check at 2:00 PM (shows yesterday's submissions)
+  // Schedule monthly summary (30th of every month at 6:00 PM - shows this month's leave)
   console.log(
-    "⏰ Scheduling additional check at 2:00 PM (Yesterday's Summary)..."
+    "⏰ Scheduling monthly summary on the 30th of every month at 6:00 PM (This Month's Summary)..."
   );
   cron.schedule(
-    "0 14 * * *", // 2:00 PM daily
+    "0 18 30 * *", // 30th of every month at 6:00 PM
     async () => {
       try {
         console.log(
-          "🕑 2:00 PM - Yesterday's leave request summary triggered..."
+          "🕔 30th of every month at 6:00 PM - This month's leave summary triggered..."
         );
-        await sendDailyLeaveSummary();
+        await sendMonthlyLeaveSummary();
       } catch (error) {
-        console.error("❌ Error in afternoon scheduled check:", error);
+        console.error("❌ Error in monthly summary:", error);
       }
     },
     {
@@ -967,50 +1221,8 @@ app.listen(PORT, () => {
     }
   );
 
-  // Schedule weekly summary (Friday at 6:00 PM - shows last week's submissions)
-  console.log(
-    "⏰ Scheduling weekly summary on Friday at 6:00 PM (Last Week's Summary)..."
-  );
-  cron.schedule(
-    "0 18 * * 5", // Friday 6:00 PM
-    async () => {
-      try {
-        console.log(
-          "🕔 Friday 6:00 PM - Last week's leave summary triggered..."
-        );
-        await sendWeeklyLeaveSummary();
-      } catch (error) {
-        console.error("❌ Error in weekly summary:", error);
-      }
-    },
-    {
-      timezone: "Asia/Colombo", // Sri Lanka timezone
-    }
-  );
-
-  // Initial check after 10 seconds
-  setTimeout(async () => {
-    console.log("🚀 Performing initial leave request check...");
-    try {
-      const newTasks = await checkForNewLeaveRequests();
-
-      if (newTasks.length > 0) {
-        console.log(
-          `✅ Found ${newTasks.length} new leave request(s) in initial check`
-        );
-        for (const task of newTasks) {
-          await sendDiscordNotification(task, {
-            username: task.creator?.username || "Unknown User",
-          });
-          console.log(`📱 Discord notification sent for: ${task.name}`);
-        }
-      } else {
-        console.log("📭 No new leave requests found in initial check");
-      }
-    } catch (error) {
-      console.error("❌ Error in initial check:", error);
-    }
-  }, 10000); // 10 seconds
+  // Initial check removed - no real-time notifications needed
+  console.log("✅ Server ready! Scheduled summaries will run automatically.");
 });
 
 module.exports = app;
