@@ -572,24 +572,32 @@ async function sendDailyLeaveSummary() {
     console.log(`📍 List ID being used: ${listId}`);
 
     // Get TODAY's date range - use Sri Lanka timezone for consistency
-    const today = new Date();
-    console.log(`🕐 Current server time: ${today.toISOString()}`);
-    console.log(`🕐 Current local time: ${today.toLocaleString()}`);
+    const now = new Date();
+    console.log(`🕐 Current server time: ${now.toISOString()}`);
+    console.log(`🕐 Current local time: ${now.toLocaleString()}`);
     console.log(
-      `🕐 Current Sri Lanka time: ${today.toLocaleString("en-US", {
+      `🕐 Current Sri Lanka time: ${now.toLocaleString("en-US", {
         timeZone: "Asia/Colombo",
       })}`
     );
 
+    // Get today's date in Sri Lanka timezone to ensure consistency
+    const sriLankaTime = new Date(
+      now.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
+    );
+    console.log(
+      `🕐 Sri Lanka time as Date object: ${sriLankaTime.toISOString()}`
+    );
+
     const startOfToday = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate()
+      sriLankaTime.getFullYear(),
+      sriLankaTime.getMonth(),
+      sriLankaTime.getDate()
     );
     const endOfToday = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate(),
+      sriLankaTime.getFullYear(),
+      sriLankaTime.getMonth(),
+      sriLankaTime.getDate(),
       23,
       59,
       59
@@ -598,7 +606,7 @@ async function sendDailyLeaveSummary() {
     console.log(`📅 Date range - Start: ${startOfToday.toISOString()}`);
     console.log(`📅 Date range - End: ${endOfToday.toISOString()}`);
     console.log(
-      `📅 Checking for employees on leave TODAY (${today.toLocaleDateString()})`
+      `📅 Checking for employees on leave TODAY (${sriLankaTime.toLocaleDateString()})`
     );
 
     // Get all tasks from the list
@@ -732,13 +740,16 @@ async function sendWeeklyLeaveSummary() {
       throw new Error("ClickUp API token not configured");
     }
 
-    // Get THIS WEEK's date range (Monday to Friday of current week)
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    // Get THIS WEEK's date range (Monday to Friday of current week) - use Sri Lanka timezone
+    const now = new Date();
+    const sriLankaTime = new Date(
+      now.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
+    );
+    const dayOfWeek = sriLankaTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
 
     // Calculate this week's Monday
-    const thisWeekMonday = new Date(today);
-    thisWeekMonday.setDate(today.getDate() - dayOfWeek + 1); // Go to this week's Monday
+    const thisWeekMonday = new Date(sriLankaTime);
+    thisWeekMonday.setDate(sriLankaTime.getDate() - dayOfWeek + 1); // Go to this week's Monday
     thisWeekMonday.setHours(0, 0, 0, 0);
 
     // Calculate this week's Friday
@@ -845,12 +856,19 @@ async function sendMonthlyLeaveSummary() {
       throw new Error("ClickUp API token not configured");
     }
 
-    // Get THIS MONTH's date range (1st to last day of current month)
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    // Get THIS MONTH's date range (1st to last day of current month) - use Sri Lanka timezone
+    const now = new Date();
+    const sriLankaTime = new Date(
+      now.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
+    );
+    const startOfMonth = new Date(
+      sriLankaTime.getFullYear(),
+      sriLankaTime.getMonth(),
+      1
+    );
     const endOfMonth = new Date(
-      today.getFullYear(),
-      today.getMonth() + 1,
+      sriLankaTime.getFullYear(),
+      sriLankaTime.getMonth() + 1,
       0,
       23,
       59,
