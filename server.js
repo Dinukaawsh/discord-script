@@ -581,32 +581,42 @@ async function sendDailyLeaveSummary() {
       })}`
     );
 
-    // Get today's date in Sri Lanka timezone to ensure consistency
+    // Get today's date in Sri Lanka timezone
+    const today = new Date();
     const sriLankaTime = new Date(
-      now.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
+      today.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
     );
-    console.log(
-      `🕐 Sri Lanka time as Date object: ${sriLankaTime.toISOString()}`
-    );
-
-    const startOfToday = new Date(
+    const FIXED_TODAY = new Date(
       sriLankaTime.getFullYear(),
       sriLankaTime.getMonth(),
       sriLankaTime.getDate()
     );
+    const startOfToday = new Date(
+      FIXED_TODAY.getFullYear(),
+      FIXED_TODAY.getMonth(),
+      FIXED_TODAY.getDate(),
+      0,
+      0,
+      0,
+      0
+    );
     const endOfToday = new Date(
-      sriLankaTime.getFullYear(),
-      sriLankaTime.getMonth(),
-      sriLankaTime.getDate(),
+      FIXED_TODAY.getFullYear(),
+      FIXED_TODAY.getMonth(),
+      FIXED_TODAY.getDate(),
       23,
       59,
-      59
+      59,
+      999
     );
+
+    console.log(`🕐 FIXED DATE MODE: Using ${FIXED_TODAY.toDateString()}`);
+    console.log(`🕐 This should find tasks with due dates on 2025-08-12`);
 
     console.log(`📅 Date range - Start: ${startOfToday.toISOString()}`);
     console.log(`📅 Date range - End: ${endOfToday.toISOString()}`);
     console.log(
-      `📅 Checking for employees on leave TODAY (${sriLankaTime.toLocaleDateString()})`
+      `📅 Checking for employees on leave TODAY (${FIXED_TODAY.toDateString()})`
     );
 
     // Get all tasks from the list
@@ -712,6 +722,16 @@ async function sendDailyLeaveSummary() {
 
     console.log(`👥 Found ${todayLeaveTasks.length} employees on leave TODAY`);
 
+    // CRITICAL DEBUG: Show which tasks were found
+    console.log("🔥 MATCHED TASKS:");
+    todayLeaveTasks.forEach((task, index) => {
+      console.log(
+        `   ${index + 1}. ${task.name} (ID: ${task.id}) - Due: ${new Date(
+          parseInt(task.due_date)
+        ).toLocaleDateString()}`
+      );
+    });
+
     if (todayLeaveTasks.length > 0) {
       // Send Discord notification
       await sendDiscordNotification(
@@ -742,14 +762,21 @@ async function sendWeeklyLeaveSummary() {
 
     // Get THIS WEEK's date range (Monday to Friday of current week) - use Sri Lanka timezone
     const now = new Date();
-    const sriLankaTime = new Date(
-      now.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
-    );
-    const dayOfWeek = sriLankaTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const sriLankaFormatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Colombo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const sriLankaDateString = sriLankaFormatter.format(now);
+    const [year, month, day] = sriLankaDateString.split("-").map(Number);
+
+    const sriLankaToday = new Date(year, month - 1, day);
+    const dayOfWeek = sriLankaToday.getDay(); // 0 = Sunday, 1 = Monday, etc.
 
     // Calculate this week's Monday
-    const thisWeekMonday = new Date(sriLankaTime);
-    thisWeekMonday.setDate(sriLankaTime.getDate() - dayOfWeek + 1); // Go to this week's Monday
+    const thisWeekMonday = new Date(sriLankaToday);
+    thisWeekMonday.setDate(sriLankaToday.getDate() - dayOfWeek + 1); // Go to this week's Monday
     thisWeekMonday.setHours(0, 0, 0, 0);
 
     // Calculate this week's Friday
@@ -858,22 +885,17 @@ async function sendMonthlyLeaveSummary() {
 
     // Get THIS MONTH's date range (1st to last day of current month) - use Sri Lanka timezone
     const now = new Date();
-    const sriLankaTime = new Date(
-      now.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
-    );
-    const startOfMonth = new Date(
-      sriLankaTime.getFullYear(),
-      sriLankaTime.getMonth(),
-      1
-    );
-    const endOfMonth = new Date(
-      sriLankaTime.getFullYear(),
-      sriLankaTime.getMonth() + 1,
-      0,
-      23,
-      59,
-      59
-    );
+    const sriLankaFormatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Colombo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const sriLankaDateString = sriLankaFormatter.format(now);
+    const [year, month, day] = sriLankaDateString.split("-").map(Number);
+
+    const startOfMonth = new Date(year, month - 1, 1);
+    const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
 
     console.log(
       `📅 Checking for leave requests from THIS MONTH: ${startOfMonth.toLocaleDateString()} to ${endOfMonth.toLocaleDateString()}`
