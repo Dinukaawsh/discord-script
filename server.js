@@ -650,33 +650,22 @@ async function sendDailyLeaveSummary() {
 
     for (const task of tasks) {
       let isOnLeaveToday = false;
-      console.log(`\n🔍 Checking task ${task.id}: "${task.name}"`);
-
-      // Check 1: Main task date field (ClickUp's built-in date)
+      // Check 1: Main task date field (ClickUp's built-in date) - Reduced logging
       if (task.due_date) {
         const dueDate = new Date(parseInt(task.due_date));
-        console.log(
-          `   📅 Due date: ${dueDate.toISOString()} (${dueDate.toLocaleDateString()})`
-        );
         if (dueDate >= startOfToday && dueDate <= endOfToday) {
           isOnLeaveToday = true;
           console.log(
-            `   ✅ Due date matches today: ${dueDate.toLocaleDateString()}`
+            `✅ Task ${task.id} (${
+              task.name
+            }) - Due date matches today: ${dueDate.toLocaleDateString()}`
           );
-        } else {
-          console.log(`   ❌ Due date does not match today`);
         }
-      } else {
-        console.log(`   📅 No due_date field found`);
       }
 
-      // Check 2: Custom date fields (From/To dates)
+      // Check 2: Custom date fields (From/To dates) - Reduced logging
       if (task.custom_fields && task.custom_fields.length > 0) {
-        console.log(`   🎯 Found ${task.custom_fields.length} custom fields:`);
         for (const field of task.custom_fields) {
-          console.log(
-            `      Field: "${field.name}" (type: ${field.type}) = ${field.value}`
-          );
           if (field.type === "date" && field.value) {
             try {
               let fieldDate;
@@ -687,34 +676,21 @@ async function sendDailyLeaveSummary() {
               }
 
               if (fieldDate && !isNaN(fieldDate.getTime())) {
-                console.log(
-                  `      📅 Parsed date: ${fieldDate.toISOString()} (${fieldDate.toLocaleDateString()})`
-                );
                 if (fieldDate >= startOfToday && fieldDate <= endOfToday) {
                   isOnLeaveToday = true;
                   console.log(
-                    `      ✅ Custom date field "${field.name}" matches today!`
-                  );
-                } else {
-                  console.log(
-                    `      ❌ Custom date field "${field.name}" does not match today`
+                    `✅ Task ${task.id} (${task.name}) - Custom field "${
+                      field.name
+                    }" matches today: ${fieldDate.toLocaleDateString()}`
                   );
                 }
-              } else {
-                console.log(`      ⚠️ Could not parse date: ${field.value}`);
               }
             } catch (dateError) {
-              console.log(
-                `      ❌ Error parsing date from field "${field.name}": ${field.value} - ${dateError.message}`
-              );
+              // Reduced error logging for production
             }
           }
         }
-      } else {
-        console.log(`   📋 No custom fields found for this task`);
       }
-
-      console.log(`   📊 Task ${task.id} on leave today: ${isOnLeaveToday}`);
       if (isOnLeaveToday) {
         todayLeaveTasks.push(task);
       }
