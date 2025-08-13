@@ -708,17 +708,20 @@ async function sendDailyLeaveSummary() {
       );
     });
 
+    // Always send Discord notification (whether there are employees on leave or not)
+    await sendDiscordNotification(
+      { name: "Daily Leave Summary - Today" }, // Special identifier for daily summary
+      { username: "System" }, // System user for summaries
+      true, // isSummary = true
+      todayLeaveTasks // Pass all tasks as summary data (empty array if no one on leave)
+    );
+
     if (todayLeaveTasks.length > 0) {
-      // Send Discord notification
-      await sendDiscordNotification(
-        { name: "Daily Leave Summary - Today" }, // Special identifier for daily summary
-        { username: "System" }, // System user for summaries
-        true, // isSummary = true
-        todayLeaveTasks // Pass all tasks as summary data
-      );
       console.log("📱 Daily leave summary sent to Discord");
     } else {
-      console.log("ℹ️ No employees on leave today");
+      console.log(
+        "📱 Daily leave summary sent to Discord (no one on leave today)"
+      );
     }
   } catch (error) {
     console.error("❌ Error in daily leave summary:", error);
@@ -954,17 +957,20 @@ async function sendMonthlyLeaveSummary() {
       `👥 Found ${thisMonthLeaveTasks.length} employees on leave THIS MONTH`
     );
 
+    // Always send Discord notification (whether there are employees on leave or not)
+    await sendDiscordNotification(
+      { name: "Monthly Leave Summary - This Month" }, // Special identifier for monthly summary
+      { username: "System" }, // System user for summaries
+      true, // isSummary = true
+      thisMonthLeaveTasks // Pass all tasks as summary data (empty array if no one on leave)
+    );
+
     if (thisMonthLeaveTasks.length > 0) {
-      // Send Discord notification
-      await sendDiscordNotification(
-        { name: "Monthly Leave Summary - This Month" }, // Special identifier for monthly summary
-        { username: "System" }, // System user for summaries
-        true, // isSummary = true
-        thisMonthLeaveTasks // Pass all tasks as summary data
-      );
       console.log("📱 Monthly leave summary sent to Discord");
     } else {
-      console.log("ℹ️ No employees on leave this month");
+      console.log(
+        "📱 Monthly leave summary sent to Discord (no one on leave this month)"
+      );
     }
   } catch (error) {
     console.error("❌ Error in monthly leave summary:", error);
@@ -1011,143 +1017,171 @@ async function sendDiscordNotification(
     };
 
     // Handle summary notifications
-    if (isSummary && summaryTasks && summaryTasks.length > 0) {
-      // Add summary statistics
-      embed.fields.push({
-        name: "📊 Summary Statistics",
-        value: `Total Employees on Leave: **${summaryTasks.length}**`,
-        inline: false,
-      });
-
-      // Group by employee and show their leave details
-      const employeeLeaveDetails = [];
-      summaryTasks.forEach((summaryTask) => {
-        // Try to get employee name from multiple sources
-        let employeeName = "Unknown";
-
-        // Source 1: Custom field with "name" in it
-        if (summaryTask.custom_fields && summaryTask.custom_fields.length > 0) {
-          for (const field of summaryTask.custom_fields) {
-            if (field.name.toLowerCase().includes("name") && field.value) {
-              employeeName = field.value;
-              break;
-            }
-          }
-        }
-
-        // Source 2: Creator username (fallback)
-        if (employeeName === "Unknown" && summaryTask.creator?.username) {
-          employeeName = summaryTask.creator.username;
-        }
-
-        // Source 3: Task name (if it contains employee info)
-        if (employeeName === "Unknown" && summaryTask.name) {
-          employeeName = summaryTask.name;
-        }
-
-        let leaveType = "Leave";
-        let fromDate = "";
-        let toDate = "";
-
-        // Extract leave type and dates from custom fields
-        if (summaryTask.custom_fields && summaryTask.custom_fields.length > 0) {
-          for (const field of summaryTask.custom_fields) {
-            if (
-              field.type === "drop_down" &&
-              field.name.toLowerCase().includes("type")
-            ) {
-              if (field.type_config && field.type_config.options) {
-                const option = field.type_config.options.find(
-                  (opt) =>
-                    opt.id === field.value || opt.orderindex === field.value
-                );
-                leaveType = option ? option.name : field.value;
-              } else {
-                leaveType = field.value;
-              }
-            } else if (field.name.toLowerCase().includes("from")) {
-              try {
-                const timestamp = parseInt(field.value);
-                if (!isNaN(timestamp)) {
-                  fromDate = new Date(timestamp).toLocaleDateString();
-                }
-              } catch (error) {
-                fromDate = field.value;
-              }
-            } else if (field.name.toLowerCase().includes("to")) {
-              try {
-                const timestamp = parseInt(field.value);
-                if (!isNaN(timestamp)) {
-                  toDate = new Date(timestamp).toLocaleDateString();
-                }
-              } catch (error) {
-                toDate = field.value;
-              }
-            }
-          }
-        }
-
-        // Build the leave detail string
-        let leaveDetail = `• **${employeeName}** - ${leaveType}`;
-        if (fromDate && toDate) {
-          if (fromDate === toDate) {
-            leaveDetail += ` (${fromDate})`;
-          } else {
-            leaveDetail += ` (${fromDate} to ${toDate})`;
-          }
-        } else if (fromDate) {
-          leaveDetail += ` (${fromDate})`;
-        } else if (toDate) {
-          leaveDetail += ` (${toDate})`;
-        }
-
-        employeeLeaveDetails.push(leaveDetail);
-      });
-
-      if (employeeLeaveDetails.length > 0) {
-        const summaryType = task.name.includes("Daily")
-          ? "Employees on Leave Today"
-          : "Employees on Leave This Month";
+    if (isSummary) {
+      if (summaryTasks && summaryTasks.length > 0) {
+        // Add summary statistics
         embed.fields.push({
-          name: `👥 ${summaryType}`,
-          value: employeeLeaveDetails.join("\n"),
+          name: "📊 Summary Statistics",
+          value: `Total Employees on Leave: **${summaryTasks.length}**`,
           inline: false,
         });
-      }
 
-      // Add task details for monthly summary
-      if (task.name.includes("Monthly")) {
-        const taskDetails = summaryTasks
-          .slice(0, 10)
-          .map((req) => {
-            let employeeName = "Unknown";
+        // Group by employee and show their leave details
+        const employeeLeaveDetails = [];
+        summaryTasks.forEach((summaryTask) => {
+          // Try to get employee name from multiple sources
+          let employeeName = "Unknown";
 
-            // Try to get employee name from custom fields first
-            if (req.custom_fields && req.custom_fields.length > 0) {
-              for (const field of req.custom_fields) {
-                if (field.name.toLowerCase().includes("name") && field.value) {
-                  employeeName = field.value;
-                  break;
+          // Source 1: Custom field with "name" in it
+          if (
+            summaryTask.custom_fields &&
+            summaryTask.custom_fields.length > 0
+          ) {
+            for (const field of summaryTask.custom_fields) {
+              if (field.name.toLowerCase().includes("name") && field.value) {
+                employeeName = field.value;
+                break;
+              }
+            }
+          }
+
+          // Source 2: Creator username (fallback)
+          if (employeeName === "Unknown" && summaryTask.creator?.username) {
+            employeeName = summaryTask.creator.username;
+          }
+
+          // Source 3: Task name (if it contains employee info)
+          if (employeeName === "Unknown" && summaryTask.name) {
+            employeeName = summaryTask.name;
+          }
+
+          let leaveType = "Leave";
+          let fromDate = "";
+          let toDate = "";
+
+          // Extract leave type and dates from custom fields
+          if (
+            summaryTask.custom_fields &&
+            summaryTask.custom_fields.length > 0
+          ) {
+            for (const field of summaryTask.custom_fields) {
+              if (
+                field.type === "drop_down" &&
+                field.name.toLowerCase().includes("type")
+              ) {
+                if (field.type_config && field.type_config.options) {
+                  const option = field.type_config.options.find(
+                    (opt) =>
+                      opt.id === field.value || opt.orderindex === field.value
+                  );
+                  leaveType = option ? option.name : field.value;
+                } else {
+                  leaveType = field.value;
+                }
+              } else if (field.name.toLowerCase().includes("from")) {
+                try {
+                  const timestamp = parseInt(field.value);
+                  if (!isNaN(timestamp)) {
+                    fromDate = new Date(timestamp).toLocaleDateString();
+                  }
+                } catch (error) {
+                  fromDate = field.value;
+                }
+              } else if (field.name.toLowerCase().includes("to")) {
+                try {
+                  const timestamp = parseInt(field.value);
+                  if (!isNaN(timestamp)) {
+                    toDate = new Date(timestamp).toLocaleDateString();
+                  }
+                } catch (error) {
+                  toDate = field.value;
                 }
               }
             }
+          }
 
-            // Fallback to creator username
-            if (employeeName === "Unknown" && req.creator?.username) {
-              employeeName = req.creator.username;
+          // Build the leave detail string
+          let leaveDetail = `• **${employeeName}** - ${leaveType}`;
+          if (fromDate && toDate) {
+            if (fromDate === toDate) {
+              leaveDetail += ` (${fromDate})`;
+            } else {
+              leaveDetail += ` (${fromDate} to ${toDate})`;
             }
+          } else if (fromDate) {
+            leaveDetail += ` (${fromDate})`;
+          } else if (toDate) {
+            leaveDetail += ` (${toDate})`;
+          }
 
-            return `• **${employeeName}** - ${req.name}`;
-          })
-          .join("\n");
+          employeeLeaveDetails.push(leaveDetail);
+        });
 
-        if (taskDetails) {
+        if (employeeLeaveDetails.length > 0) {
+          const summaryType = task.name.includes("Daily")
+            ? "Employees on Leave Today"
+            : "Employees on Leave This Month";
           embed.fields.push({
-            name: "📋 Leave Request Details",
-            value: taskDetails,
+            name: `👥 ${summaryType}`,
+            value: employeeLeaveDetails.join("\n"),
             inline: false,
           });
         }
+
+        // Add task details for monthly summary
+        if (task.name.includes("Monthly")) {
+          const taskDetails = summaryTasks
+            .slice(0, 10)
+            .map((req) => {
+              let employeeName = "Unknown";
+
+              // Try to get employee name from custom fields first
+              if (req.custom_fields && req.custom_fields.length > 0) {
+                for (const field of req.custom_fields) {
+                  if (
+                    field.name.toLowerCase().includes("name") &&
+                    field.value
+                  ) {
+                    employeeName = field.value;
+                    break;
+                  }
+                }
+              }
+
+              // Fallback to creator username
+              if (employeeName === "Unknown" && req.creator?.username) {
+                employeeName = req.creator.username;
+              }
+
+              return `• **${employeeName}** - ${req.name}`;
+            })
+            .join("\n");
+
+          if (taskDetails) {
+            embed.fields.push({
+              name: "📋 Leave Request Details",
+              value: taskDetails,
+              inline: false,
+            });
+          }
+        }
+      } else {
+        // No employees on leave - show appropriate message
+        embed.fields.push({
+          name: "📊 Summary Statistics",
+          value: `Total Employees on Leave: **0**`,
+          inline: false,
+        });
+
+        const summaryType = task.name.includes("Daily")
+          ? "No employees on leave today! 🎉"
+          : "No employees on leave this month! 🎉";
+
+        embed.fields.push({
+          name: "✅ Status",
+          value: summaryType,
+          inline: false,
+        });
       }
     } else {
       // Handle individual task notifications (not summaries)
