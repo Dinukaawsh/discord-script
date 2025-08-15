@@ -119,9 +119,7 @@ app.get("/debug-clickup-data", async (req, res) => {
     console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
     console.log(`📍 List ID: ${listId}`);
     console.log(
-      `🕐 Server timezone: ${
-        Intl.DateTimeFormat().resolvedOptions().resolvedOptions().timeZone
-      }`
+      `🕐 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
     );
     console.log(
       `🇱🇰 Sri Lanka time: ${getSriLankaTime().format("YYYY-MM-DD HH:mm:ss")}`
