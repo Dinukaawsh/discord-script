@@ -778,25 +778,32 @@ async function sendDailyLeaveSummary(targetDate = null) {
       );
     }
 
-    // Filter tasks for employees on leave TODAY
+    // Filter tasks for employees on leave on the target date
     const todayLeaveTasks = [];
 
     for (const task of tasks) {
       let isOnLeaveToday = false;
-      // Check 1: Main task date field (ClickUp's built-in date) - Reduced logging
+
+      // Check 1: Main task due_date field (ClickUp's built-in date) - This is where the leave date is stored
       if (task.due_date) {
         const dueDate = new Date(parseInt(task.due_date));
+        console.log(
+          `🔍 Task ${task.id} (${
+            task.name
+          }) - Due date: ${dueDate.toLocaleDateString()} (${dueDate.toISOString()})`
+        );
+
         if (dueDate >= startOfToday && dueDate <= endOfToday) {
           isOnLeaveToday = true;
           console.log(
             `✅ Task ${task.id} (${
               task.name
-            }) - Due date matches today: ${dueDate.toLocaleDateString()}`
+            }) - Due date matches target date: ${dueDate.toLocaleDateString()}`
           );
         }
       }
 
-      // Check 2: Custom date fields (From/To dates) - Reduced logging
+      // Check 2: Custom date fields (From/To dates) - These might have additional date info
       if (task.custom_fields && task.custom_fields.length > 0) {
         for (const field of task.custom_fields) {
           if (field.type === "date" && field.value) {
@@ -809,21 +816,30 @@ async function sendDailyLeaveSummary(targetDate = null) {
               }
 
               if (fieldDate && !isNaN(fieldDate.getTime())) {
+                console.log(
+                  `🔍 Task ${task.id} (${task.name}) - Custom field "${
+                    field.name
+                  }": ${fieldDate.toLocaleDateString()} (${fieldDate.toISOString()})`
+                );
+
                 if (fieldDate >= startOfToday && fieldDate <= endOfToday) {
                   isOnLeaveToday = true;
                   console.log(
                     `✅ Task ${task.id} (${task.name}) - Custom field "${
                       field.name
-                    }" matches today: ${fieldDate.toLocaleDateString()}`
+                    }" matches target date: ${fieldDate.toLocaleDateString()}`
                   );
                 }
               }
             } catch (dateError) {
-              // Reduced error logging for production
+              console.log(
+                `⚠️ Could not parse date from field "${field.name}": ${field.value}`
+              );
             }
           }
         }
       }
+
       if (isOnLeaveToday) {
         todayLeaveTasks.push(task);
       }
@@ -1066,20 +1082,26 @@ async function sendMonthlyLeaveSummary() {
     for (const task of tasks) {
       let isOnLeaveThisMonth = false;
 
-      // Check 1: Main task date field (ClickUp's built-in date)
+      // Check 1: Main task due_date field (ClickUp's built-in date) - This is where the leave date is stored
       if (task.due_date) {
         const dueDate = new Date(parseInt(task.due_date));
+        console.log(
+          `🔍 Task ${task.id} (${
+            task.name
+          }) - Due date: ${dueDate.toLocaleDateString()} (${dueDate.toISOString()})`
+        );
+
         if (dueDate >= startOfMonth && dueDate <= endOfMonth) {
           isOnLeaveThisMonth = true;
           console.log(
-            `✅ Task ${
-              task.id
-            } - Main date matches this month: ${dueDate.toLocaleDateString()}`
+            `✅ Task ${task.id} (${
+              task.name
+            }) - Main date matches this month: ${dueDate.toLocaleDateString()}`
           );
         }
       }
 
-      // Check 2: Custom date fields (From/To dates)
+      // Check 2: Custom date fields (From/To dates) - These might have additional date info
       if (task.custom_fields && task.custom_fields.length > 0) {
         for (const field of task.custom_fields) {
           if (field.type === "date" && field.value) {
@@ -1092,10 +1114,16 @@ async function sendMonthlyLeaveSummary() {
               }
 
               if (fieldDate && !isNaN(fieldDate.getTime())) {
+                console.log(
+                  `🔍 Task ${task.id} (${task.name}) - Custom field "${
+                    field.name
+                  }": ${fieldDate.toLocaleDateString()} (${fieldDate.toISOString()})`
+                );
+
                 if (fieldDate >= startOfMonth && fieldDate <= endOfMonth) {
                   isOnLeaveThisMonth = true;
                   console.log(
-                    `✅ Task ${task.id} - Custom date field "${
+                    `✅ Task ${task.id} (${task.name}) - Custom date field "${
                       field.name
                     }" matches this month: ${fieldDate.toLocaleDateString()}`
                   );
