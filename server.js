@@ -2,7 +2,12 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 const cron = require("node-cron");
+const moment = require("moment-timezone");
 require("dotenv").config();
+
+// 🕐 TIMEZONE SOLUTION: This app uses moment-timezone to ensure consistent
+// Sri Lanka timezone handling regardless of server environment (local vs Railway/cloud)
+// All date calculations are done in Asia/Colombo timezone to avoid UTC/local time issues
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,6 +18,26 @@ console.log(`🔌 Port: ${PORT}`);
 
 // Track which tasks we've already notified about
 const notifiedTasks = new Set();
+
+// Helper function for consistent timezone handling
+function getSriLankaTime() {
+  // Always use Asia/Colombo timezone regardless of server environment
+  return moment().tz("Asia/Colombo");
+}
+
+function getSriLankaDate() {
+  // Get current date in Sri Lanka timezone
+  const sriLankaTime = getSriLankaTime();
+  return {
+    year: sriLankaTime.year(),
+    month: sriLankaTime.month(), // 0-11 (January = 0)
+    date: sriLankaTime.date(),
+    day: sriLankaTime.day(), // 0-6 (Sunday = 0)
+    hour: sriLankaTime.hour(),
+    minute: sriLankaTime.minute(),
+    second: sriLankaTime.second(),
+  };
+}
 
 // Middleware
 app.use(cors());
@@ -54,13 +79,26 @@ app.get("/check-now", async (req, res) => {
 // Test daily summary endpoint
 app.get("/test-daily-summary", async (req, res) => {
   try {
-    console.log("🧪 Testing daily summary...");
-    await sendDailyLeaveSummary();
-    res.json({
-      success: true,
-      message: "Daily summary test triggered successfully",
-      timestamp: new Date().toLocaleString(),
-    });
+    const { date } = req.query; // Get date from query parameter
+
+    if (date) {
+      console.log(`🧪 Testing daily summary for specific date: ${date}`);
+      await sendDailyLeaveSummary(date);
+      res.json({
+        success: true,
+        message: `Daily summary test triggered successfully for ${date}`,
+        date: date,
+        timestamp: new Date().toLocaleString(),
+      });
+    } else {
+      console.log("🧪 Testing daily summary for today...");
+      await sendDailyLeaveSummary();
+      res.json({
+        success: true,
+        message: "Daily summary test triggered successfully for today",
+        timestamp: new Date().toLocaleString(),
+      });
+    }
   } catch (error) {
     console.error("❌ Error testing daily summary:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -81,8 +119,14 @@ app.get("/debug-clickup-data", async (req, res) => {
     console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
     console.log(`📍 List ID: ${listId}`);
     console.log(
-      `🕐 Server timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+      `🕐 Server timezone: ${
+        Intl.DateTimeFormat().resolvedOptions().resolvedOptions().timeZone
+      }`
     );
+    console.log(
+      `🇱🇰 Sri Lanka time: ${getSriLankaTime().format("YYYY-MM-DD HH:mm:ss")}`
+    );
+    console.log(`🌍 UTC time: ${moment().utc().format("YYYY-MM-DD HH:mm:ss")}`);
 
     const response = await axios.get(
       `https://api.clickup.com/api/v2/list/${listId}/task`,
@@ -123,6 +167,70 @@ app.get("/debug-clickup-data", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error in debug endpoint:", error);
+    res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
+  }
+});
+
+// New endpoint to debug timezone handling
+app.get("/debug-timezone", (req, res) => {
+  try {
+    const serverTime = new Date();
+    const utcTime = moment().utc();
+    const sriLankaTime = getSriLankaTime();
+    const sriLankaDate = getSriLankaDate();
+
+    // Test date calculations
+    const startOfToday = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month)
+      .date(sriLankaDate.date)
+      .hour(0)
+      .minute(0)
+      .second(0)
+      .millisecond(0);
+
+    const endOfToday = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month)
+      .date(sriLankaDate.date)
+      .hour(23)
+      .minute(59)
+      .second(59)
+      .millisecond(999);
+
+    res.json({
+      success: true,
+      serverInfo: {
+        environment: process.env.NODE_ENV || "development",
+        serverTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        serverTime: serverTime.toISOString(),
+        serverTimeLocal: serverTime.toLocaleString(),
+      },
+      timezoneInfo: {
+        utcTime: utcTime.format("YYYY-MM-DD HH:mm:ss"),
+        sriLankaTime: sriLankaTime.format("YYYY-MM-DD HH:mm:ss"),
+        sriLankaDateComponents: {
+          year: sriLankaDate.year,
+          month: sriLankaDate.month + 1, // Display as 1-12
+          date: sriLankaDate.date,
+          day: sriLankaDate.day,
+        },
+        sriLankaDateFormatted: sriLankaTime.format("YYYY-MM-DD"),
+      },
+      dateCalculations: {
+        startOfToday: startOfToday.toISOString(),
+        endOfToday: endOfToday.toISOString(),
+        startOfTodayLocal: startOfToday.local().format("YYYY-MM-DD HH:mm:ss"),
+        endOfTodayLocal: endOfToday.local().format("YYYY-MM-DD HH:mm:ss"),
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error in timezone debug endpoint:", error);
     res
       .status(500)
       .json({ error: "Internal server error", details: error.message });
@@ -554,7 +662,7 @@ async function checkForNewLeaveRequests() {
 }
 
 // Function to send daily leave summary
-async function sendDailyLeaveSummary() {
+async function sendDailyLeaveSummary(targetDate = null) {
   try {
     console.log("📊 Generating daily leave summary for TODAY...");
     const clickupApiToken = process.env.CLICKUP_API_TOKEN;
@@ -571,52 +679,79 @@ async function sendDailyLeaveSummary() {
     );
     console.log(`📍 List ID being used: ${listId}`);
 
-    // Get TODAY's date range - use Sri Lanka timezone for consistency
-    const now = new Date();
-    console.log(`🕐 Current server time: ${now.toISOString()}`);
-    console.log(`🕐 Current local time: ${now.toLocaleString()}`);
+    // Handle target date parameter
+    let sriLankaNow, sriLankaDate, startOfToday, endOfToday, dateLabel;
+
+    if (targetDate) {
+      // Parse the target date (expecting YYYY-MM-DD format)
+      const parsedDate = moment.tz(targetDate, "YYYY-MM-DD", "Asia/Colombo");
+      if (!parsedDate.isValid()) {
+        throw new Error("Invalid date format. Use YYYY-MM-DD");
+      }
+
+      sriLankaNow = parsedDate;
+      sriLankaDate = {
+        year: parsedDate.year(),
+        month: parsedDate.month(),
+        date: parsedDate.date(),
+        day: parsedDate.day(),
+        hour: parsedDate.hour(),
+        minute: parsedDate.minute(),
+        second: parsedDate.second(),
+      };
+      dateLabel = `SPECIFIC DATE (${targetDate})`;
+
+      console.log(`🎯 Testing for specific date: ${targetDate}`);
+    } else {
+      // Get TODAY's date range using robust timezone handling
+      sriLankaNow = getSriLankaTime();
+      sriLankaDate = getSriLankaDate();
+      dateLabel = "TODAY";
+
+      console.log(`📅 Testing for today's date`);
+    }
+
     console.log(
-      `🕐 Current Sri Lanka time: ${now.toLocaleString("en-US", {
-        timeZone: "Asia/Colombo",
-      })}`
+      `🕐 Current UTC time: ${moment().utc().format("YYYY-MM-DD HH:mm:ss")}`
+    );
+    console.log(
+      `🇱🇰 Target Sri Lanka time: ${sriLankaNow.format("YYYY-MM-DD HH:mm:ss")}`
+    );
+    console.log(
+      `📅 Sri Lanka date components: ${sriLankaDate.year}-${
+        sriLankaDate.month + 1
+      }-${sriLankaDate.date}`
     );
 
-    // Get today's date in Sri Lanka timezone
-    const today = new Date();
-    const sriLankaTime = new Date(
-      today.toLocaleString("en-US", { timeZone: "Asia/Colombo" })
-    );
-    const FIXED_TODAY = new Date(
-      sriLankaTime.getFullYear(),
-      sriLankaTime.getMonth(),
-      sriLankaTime.getDate()
-    );
-    const startOfToday = new Date(
-      FIXED_TODAY.getFullYear(),
-      FIXED_TODAY.getMonth(),
-      FIXED_TODAY.getDate(),
-      0,
-      0,
-      0,
-      0
-    );
-    const endOfToday = new Date(
-      FIXED_TODAY.getFullYear(),
-      FIXED_TODAY.getMonth(),
-      FIXED_TODAY.getDate(),
-      23,
-      59,
-      59,
-      999
-    );
+    // Create date range for the target date in Sri Lanka timezone
+    startOfToday = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month)
+      .date(sriLankaDate.date)
+      .hour(0)
+      .minute(0)
+      .second(0)
+      .millisecond(0)
+      .toDate();
 
-    console.log(`🕐 FIXED DATE MODE: Using ${FIXED_TODAY.toDateString()}`);
-    console.log(`🕐 This should find tasks with due dates on 2025-08-12`);
+    endOfToday = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month)
+      .date(sriLankaDate.date)
+      .hour(23)
+      .minute(59)
+      .second(59)
+      .millisecond(999)
+      .toDate();
 
     console.log(`📅 Date range - Start: ${startOfToday.toISOString()}`);
     console.log(`📅 Date range - End: ${endOfToday.toISOString()}`);
     console.log(
-      `📅 Checking for employees on leave TODAY (${FIXED_TODAY.toDateString()})`
+      `📅 Checking for employees on leave on ${dateLabel} (${sriLankaNow.format(
+        "YYYY-MM-DD"
+      )})`
     );
 
     // Get all tasks from the list
@@ -696,7 +831,9 @@ async function sendDailyLeaveSummary() {
       }
     }
 
-    console.log(`👥 Found ${todayLeaveTasks.length} employees on leave TODAY`);
+    console.log(
+      `👥 Found ${todayLeaveTasks.length} employees on leave on ${dateLabel}`
+    );
 
     // CRITICAL DEBUG: Show which tasks were found
     console.log("🔥 MATCHED TASKS:");
@@ -708,19 +845,23 @@ async function sendDailyLeaveSummary() {
       );
     });
 
-    // Always send Discord notification (whether there are employees on leave or not)
-    await sendDiscordNotification(
-      { name: "Daily Leave Summary - Today" }, // Special identifier for daily summary
-      { username: "System" }, // System user for summaries
-      true, // isSummary = true
-      todayLeaveTasks // Pass all tasks as summary data (empty array if no one on leave)
-    );
-
+    // Only send Discord notification if there are employees on leave on the target date
     if (todayLeaveTasks.length > 0) {
-      console.log("📱 Daily leave summary sent to Discord");
+      const summaryTitle = targetDate
+        ? `Daily Leave Summary - ${targetDate}`
+        : "Daily Leave Summary - Today";
+
+      await sendDiscordNotification(
+        { name: summaryTitle }, // Special identifier for daily summary
+        { username: "System" }, // System user for summaries
+        true, // isSummary = true
+        todayLeaveTasks, // Pass all tasks as summary data
+        targetDate // Pass the target date for display
+      );
+      console.log(`📱 Daily leave summary sent to Discord for ${dateLabel}`);
     } else {
       console.log(
-        "📱 Daily leave summary sent to Discord (no one on leave today)"
+        `📭 No employees on leave on ${dateLabel} - no notification sent`
       );
     }
   } catch (error) {
@@ -739,29 +880,36 @@ async function sendWeeklyLeaveSummary() {
       throw new Error("ClickUp API token not configured");
     }
 
-    // Get THIS WEEK's date range (Monday to Friday of current week) - use Sri Lanka timezone
-    const now = new Date();
-    const sriLankaFormatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Colombo",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const sriLankaDateString = sriLankaFormatter.format(now);
-    const [year, month, day] = sriLankaDateString.split("-").map(Number);
+    // Get THIS WEEK's date range (Monday to Friday of current week) using robust timezone handling
+    const sriLankaNow = getSriLankaTime();
+    const sriLankaDate = getSriLankaDate();
 
-    const sriLankaToday = new Date(year, month - 1, day);
-    const dayOfWeek = sriLankaToday.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    // Calculate this week's Monday and Friday in Sri Lanka timezone
+    const thisWeekMonday = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month)
+      .date(sriLankaDate.date)
+      .startOf("week")
+      .add(1, "day") // Monday (moment starts week on Sunday, so add 1 for Monday)
+      .hour(0)
+      .minute(0)
+      .second(0)
+      .millisecond(0)
+      .toDate();
 
-    // Calculate this week's Monday
-    const thisWeekMonday = new Date(sriLankaToday);
-    thisWeekMonday.setDate(sriLankaToday.getDate() - dayOfWeek + 1); // Go to this week's Monday
-    thisWeekMonday.setHours(0, 0, 0, 0);
-
-    // Calculate this week's Friday
-    const thisWeekFriday = new Date(thisWeekMonday);
-    thisWeekFriday.setDate(thisWeekMonday.getDate() + 4); // Friday is 4 days after Monday
-    thisWeekFriday.setHours(23, 59, 59, 999);
+    const thisWeekFriday = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month)
+      .date(sriLankaDate.date)
+      .startOf("week")
+      .add(5, "day") // Friday (5 days after Sunday)
+      .hour(23)
+      .minute(59)
+      .second(59)
+      .millisecond(999)
+      .toDate();
 
     console.log(
       `📅 Checking for leave requests from THIS WEEK: ${thisWeekMonday.toLocaleDateString()} to ${thisWeekFriday.toLocaleDateString()}`
@@ -828,8 +976,10 @@ async function sendWeeklyLeaveSummary() {
           creator: { username: "System" },
         },
         { username: "System" },
-        true
-      ); // true = is summary
+        true, // true = is summary
+        [], // Empty array for no tasks
+        null // No specific date for weekly summaries
+      );
       return;
     }
 
@@ -844,8 +994,9 @@ async function sendWeeklyLeaveSummary() {
       },
       { username: "System" },
       true,
-      thisWeekTasks
-    ); // true = is summary, thisWeekTasks = summary data
+      thisWeekTasks, // true = is summary, thisWeekTasks = summary data
+      null // No specific date for weekly summaries
+    );
   } catch (error) {
     console.error("❌ Error generating weekly summary:", error);
   }
@@ -862,19 +1013,32 @@ async function sendMonthlyLeaveSummary() {
       throw new Error("ClickUp API token not configured");
     }
 
-    // Get THIS MONTH's date range (1st to last day of current month) - use Sri Lanka timezone
-    const now = new Date();
-    const sriLankaFormatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Colombo",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const sriLankaDateString = sriLankaFormatter.format(now);
-    const [year, month, day] = sriLankaDateString.split("-").map(Number);
+    // Get THIS MONTH's date range (1st to last day of current month) using robust timezone handling
+    const sriLankaNow = getSriLankaTime();
+    const sriLankaDate = getSriLankaDate();
 
-    const startOfMonth = new Date(year, month - 1, 1);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+    // Calculate start and end of month in Sri Lanka timezone
+    const startOfMonth = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month)
+      .date(1)
+      .hour(0)
+      .minute(0)
+      .second(0)
+      .millisecond(0)
+      .toDate();
+
+    const endOfMonth = moment
+      .tz("Asia/Colombo")
+      .year(sriLankaDate.year)
+      .month(sriLankaDate.month + 1)
+      .date(0) // Last day of current month
+      .hour(23)
+      .minute(59)
+      .second(59)
+      .millisecond(999)
+      .toDate();
 
     console.log(
       `📅 Checking for leave requests from THIS MONTH: ${startOfMonth.toLocaleDateString()} to ${endOfMonth.toLocaleDateString()}`
@@ -962,7 +1126,8 @@ async function sendMonthlyLeaveSummary() {
       { name: "Monthly Leave Summary - This Month" }, // Special identifier for monthly summary
       { username: "System" }, // System user for summaries
       true, // isSummary = true
-      thisMonthLeaveTasks // Pass all tasks as summary data (empty array if no one on leave)
+      thisMonthLeaveTasks, // Pass all tasks as summary data (empty array if no one on leave)
+      null // No specific date for monthly summaries
     );
 
     if (thisMonthLeaveTasks.length > 0) {
@@ -982,7 +1147,8 @@ async function sendDiscordNotification(
   task,
   user,
   isSummary = false,
-  summaryTasks = []
+  summaryTasks = [],
+  targetDate = null
 ) {
   try {
     const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
@@ -997,7 +1163,11 @@ async function sendDiscordNotification(
 
     if (isSummary) {
       if (task.name.includes("Daily")) {
-        embedTitle = "📊 Daily Leave Summary - Today";
+        if (targetDate) {
+          embedTitle = `📊 Daily Leave Summary - ${targetDate}`;
+        } else {
+          embedTitle = "📊 Daily Leave Summary - Today";
+        }
         embedColor = 0x0099ff; // Blue color
       } else if (task.name.includes("Monthly")) {
         embedTitle = "📈 Monthly Leave Summary - This Month";
@@ -1026,14 +1196,31 @@ async function sendDiscordNotification(
           inline: false,
         });
 
+        // Add date information for daily summaries
+        if (task.name.includes("Daily") && targetDate) {
+          embed.fields.push({
+            name: "📅 Date",
+            value: `**${targetDate}**`,
+            inline: true,
+          });
+        }
+
         // Group by employee and show their leave details
         const employeeLeaveDetails = [];
         summaryTasks.forEach((summaryTask) => {
           // Try to get employee name from multiple sources
           let employeeName = "Unknown";
 
-          // Source 1: Custom field with "name" in it
-          if (
+          // Source 1: Task name (primary source - most reliable for leave requests)
+          if (summaryTask.name && summaryTask.name.trim() !== "") {
+            employeeName = summaryTask.name.trim();
+          }
+          // Source 2: Creator username (fallback)
+          else if (summaryTask.creator?.username) {
+            employeeName = summaryTask.creator.username;
+          }
+          // Source 3: Custom field with "name" in it (last resort)
+          else if (
             summaryTask.custom_fields &&
             summaryTask.custom_fields.length > 0
           ) {
@@ -1043,16 +1230,6 @@ async function sendDiscordNotification(
                 break;
               }
             }
-          }
-
-          // Source 2: Creator username (fallback)
-          if (employeeName === "Unknown" && summaryTask.creator?.username) {
-            employeeName = summaryTask.creator.username;
-          }
-
-          // Source 3: Task name (if it contains employee info)
-          if (employeeName === "Unknown" && summaryTask.name) {
-            employeeName = summaryTask.name;
           }
 
           let leaveType = "Leave";
@@ -1114,12 +1291,20 @@ async function sendDiscordNotification(
             leaveDetail += ` (${toDate})`;
           }
 
+          // Debug logging for employee name extraction
+          console.log(
+            `🔍 Employee name extracted: "${employeeName}" from task: "${summaryTask.name}"`
+          );
+          console.log(`🔍 Leave type: "${leaveType}"`);
+
           employeeLeaveDetails.push(leaveDetail);
         });
 
         if (employeeLeaveDetails.length > 0) {
           const summaryType = task.name.includes("Daily")
-            ? "Employees on Leave Today"
+            ? targetDate
+              ? `Employees on Leave on ${targetDate}`
+              : "Employees on Leave Today"
             : "Employees on Leave This Month";
           embed.fields.push({
             name: `👥 ${summaryType}`,
@@ -1135,8 +1320,16 @@ async function sendDiscordNotification(
             .map((req) => {
               let employeeName = "Unknown";
 
-              // Try to get employee name from custom fields first
-              if (req.custom_fields && req.custom_fields.length > 0) {
+              // Source 1: Task name (primary source - most reliable for leave requests)
+              if (req.name && req.name.trim() !== "") {
+                employeeName = req.name.trim();
+              }
+              // Source 2: Creator username (fallback)
+              else if (req.creator?.username) {
+                employeeName = req.creator.username;
+              }
+              // Source 3: Custom field with "name" in it (last resort)
+              else if (req.custom_fields && req.custom_fields.length > 0) {
                 for (const field of req.custom_fields) {
                   if (
                     field.name.toLowerCase().includes("name") &&
@@ -1146,11 +1339,6 @@ async function sendDiscordNotification(
                     break;
                   }
                 }
-              }
-
-              // Fallback to creator username
-              if (employeeName === "Unknown" && req.creator?.username) {
-                employeeName = req.creator.username;
               }
 
               return `• **${employeeName}** - ${req.name}`;
@@ -1173,8 +1361,19 @@ async function sendDiscordNotification(
           inline: false,
         });
 
+        // Add date information for daily summaries even when no one is on leave
+        if (task.name.includes("Daily") && targetDate) {
+          embed.fields.push({
+            name: "📅 Date",
+            value: `**${targetDate}**`,
+            inline: true,
+          });
+        }
+
         const summaryType = task.name.includes("Daily")
-          ? "No employees on leave today! 🎉"
+          ? targetDate
+            ? `No employees on leave on ${targetDate}! 🎉`
+            : "No employees on leave today! 🎉"
           : "No employees on leave this month! 🎉";
 
         embed.fields.push({
@@ -1325,11 +1524,15 @@ app.listen(PORT, () => {
     `🧪 Test daily summary: http://localhost:${PORT}/test-daily-summary`
   );
   console.log(
+    `🧪 Test daily summary for specific date: http://localhost:${PORT}/test-daily-summary?date=YYYY-MM-DD`
+  );
+  console.log(
     `🧪 Test monthly summary: http://localhost:${PORT}/test-monthly-summary`
   );
   console.log(
     `🔍 Debug ClickUp data: http://localhost:${PORT}/debug-clickup-data`
   );
+  console.log(`🌍 Debug timezone: http://localhost:${PORT}/debug-timezone`);
   console.log(
     `📅 Check leave on specific date: http://localhost:${PORT}/check-leave-on-date/YYYY-MM-DD`
   );
