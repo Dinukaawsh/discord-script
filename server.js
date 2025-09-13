@@ -1575,6 +1575,15 @@ app.get("/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
+// Ping endpoint to keep app awake
+app.get("/ping", (req, res) => {
+  res.json({
+    status: "AWAKE",
+    timestamp: new Date().toISOString(),
+    message: "App is active and ready for scheduled tasks",
+  });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
