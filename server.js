@@ -389,7 +389,7 @@ app.get("/check-leave-on-date/:date", async (req, res) => {
 
     const tasks = response.data.tasks || [];
 
-    // Filter for tasks where the leave date matches the target date
+    // Filter for tasks where Twisters are on leave on the target date
     const leaveTasks = tasks.filter((task) => {
       if (task.custom_fields && task.custom_fields.length > 0) {
         for (const field of task.custom_fields) {
@@ -473,7 +473,7 @@ app.get("/check-leave-on-date/:date", async (req, res) => {
     });
 
     console.log(
-      `📅 Found ${employeesOnLeave.length} employees on leave on ${date}`
+      `📅 Found ${employeesOnLeave.length} Twisters on leave on ${date}`
     );
 
     res.json({
@@ -481,7 +481,7 @@ app.get("/check-leave-on-date/:date", async (req, res) => {
       date: date,
       employeesOnLeave: employeesOnLeave,
       count: employeesOnLeave.length,
-      message: `Found ${employeesOnLeave.length} employees on leave on ${date}`,
+      message: `Found ${employeesOnLeave.length} Twisters on leave on ${date}`,
     });
   } catch (error) {
     console.error("❌ Error checking leave on date:", error.message);
@@ -747,7 +747,7 @@ async function sendDailyLeaveSummary(targetDate = null) {
     console.log(`📅 Date range - Start: ${startOfToday.toISOString()}`);
     console.log(`📅 Date range - End: ${endOfToday.toISOString()}`);
     console.log(
-      `📅 Checking for employees on leave on ${dateLabel} (${sriLankaNow.format(
+      `📅 Checking for Twisters on leave on ${dateLabel} (${sriLankaNow.format(
         "YYYY-MM-DD"
       )})`
     );
@@ -778,7 +778,7 @@ async function sendDailyLeaveSummary(targetDate = null) {
       );
     }
 
-    // Filter tasks for employees on leave on the target date
+    // Filter tasks for Twisters on leave on the target date
     const todayLeaveTasks = [];
 
     for (const task of tasks) {
@@ -793,6 +793,9 @@ async function sendDailyLeaveSummary(targetDate = null) {
           }) - Due date: ${dueDate.toLocaleDateString()} (${dueDate.toISOString()})`
         );
 
+        // Check if the target date falls within the leave period
+        // For single-day leave, due_date equals the leave date
+        // For multi-day leave, due_date is the end date, so we need to check if target date is on or before the due date
         if (dueDate >= startOfToday && dueDate <= endOfToday) {
           isOnLeaveToday = true;
           console.log(
@@ -800,6 +803,27 @@ async function sendDailyLeaveSummary(targetDate = null) {
               task.name
             }) - Due date matches target date: ${dueDate.toLocaleDateString()}`
           );
+        } else if (dueDate > endOfToday) {
+          // Check if this is a multi-day leave that includes the target date
+          // If due_date is after target date, check if there's a start_date or if it's a multi-day leave
+          const startDate = task.start_date
+            ? new Date(parseInt(task.start_date))
+            : null;
+          if (startDate) {
+            console.log(
+              `🔍 Task ${task.id} (${
+                task.name
+              }) - Start date: ${startDate.toLocaleDateString()}, End date: ${dueDate.toLocaleDateString()}`
+            );
+            if (startDate <= endOfToday && dueDate >= startOfToday) {
+              isOnLeaveToday = true;
+              console.log(
+                `✅ Task ${task.id} (${
+                  task.name
+                }) - Multi-day leave includes target date: ${startDate.toLocaleDateString()} to ${dueDate.toLocaleDateString()}`
+              );
+            }
+          }
         }
       }
 
@@ -846,7 +870,7 @@ async function sendDailyLeaveSummary(targetDate = null) {
     }
 
     console.log(
-      `👥 Found ${todayLeaveTasks.length} employees on leave on ${dateLabel}`
+      `👥 Found ${todayLeaveTasks.length} Twisters on leave on ${dateLabel}`
     );
 
     // CRITICAL DEBUG: Show which tasks were found
@@ -875,7 +899,7 @@ async function sendDailyLeaveSummary(targetDate = null) {
       console.log(`📱 Daily leave summary sent to Discord for ${dateLabel}`);
     } else {
       console.log(
-        `📭 No employees on leave on ${dateLabel} - no notification sent`
+        `📭 No Twisters on leave on ${dateLabel} - no notification sent`
       );
     }
   } catch (error) {
@@ -926,7 +950,7 @@ async function sendWeeklyLeaveSummary() {
       .toDate();
 
     console.log(
-      `📅 Checking for leave requests from THIS WEEK: ${thisWeekMonday.toLocaleDateString()} to ${thisWeekFriday.toLocaleDateString()}`
+      `📅 Checking for Twisters on leave from THIS WEEK: ${thisWeekMonday.toLocaleDateString()} to ${thisWeekFriday.toLocaleDateString()}`
     );
 
     // Get tasks from the specific list
@@ -952,7 +976,7 @@ async function sendWeeklyLeaveSummary() {
     const tasks = response.data.tasks || [];
     console.log(`📋 Found ${tasks.length} total tasks in list`);
 
-    // Filter for tasks where the leave date is THIS WEEK
+    // Filter for tasks where Twisters are on leave THIS WEEK
     const thisWeekTasks = tasks.filter((task) => {
       if (task.custom_fields && task.custom_fields.length > 0) {
         for (const field of task.custom_fields) {
@@ -1055,7 +1079,7 @@ async function sendMonthlyLeaveSummary() {
       .toDate();
 
     console.log(
-      `📅 Checking for leave requests from THIS MONTH: ${startOfMonth.toLocaleDateString()} to ${endOfMonth.toLocaleDateString()}`
+      `📅 Checking for Twisters on leave from THIS MONTH: ${startOfMonth.toLocaleDateString()} to ${endOfMonth.toLocaleDateString()}`
     );
 
     // Get all tasks from the list
@@ -1076,7 +1100,7 @@ async function sendMonthlyLeaveSummary() {
     const tasks = response.data.tasks || [];
     console.log(`📋 Found ${tasks.length} total tasks in list`);
 
-    // Filter tasks for employees on leave THIS MONTH
+    // Filter tasks for Twisters on leave THIS MONTH
     const thisMonthLeaveTasks = [];
 
     for (const task of tasks) {
@@ -1091,6 +1115,7 @@ async function sendMonthlyLeaveSummary() {
           }) - Due date: ${dueDate.toLocaleDateString()} (${dueDate.toISOString()})`
         );
 
+        // Check if the leave period overlaps with this month
         if (dueDate >= startOfMonth && dueDate <= endOfMonth) {
           isOnLeaveThisMonth = true;
           console.log(
@@ -1098,6 +1123,26 @@ async function sendMonthlyLeaveSummary() {
               task.name
             }) - Main date matches this month: ${dueDate.toLocaleDateString()}`
           );
+        } else if (dueDate > endOfMonth) {
+          // Check if this is a multi-day leave that includes part of this month
+          const startDate = task.start_date
+            ? new Date(parseInt(task.start_date))
+            : null;
+          if (startDate) {
+            console.log(
+              `🔍 Task ${task.id} (${
+                task.name
+              }) - Start date: ${startDate.toLocaleDateString()}, End date: ${dueDate.toLocaleDateString()}`
+            );
+            if (startDate <= endOfMonth && dueDate >= startOfMonth) {
+              isOnLeaveThisMonth = true;
+              console.log(
+                `✅ Task ${task.id} (${
+                  task.name
+                }) - Multi-day leave includes this month: ${startDate.toLocaleDateString()} to ${dueDate.toLocaleDateString()}`
+              );
+            }
+          }
         }
       }
 
@@ -1144,7 +1189,7 @@ async function sendMonthlyLeaveSummary() {
     }
 
     console.log(
-      `👥 Found ${thisMonthLeaveTasks.length} employees on leave THIS MONTH`
+      `👥 Found ${thisMonthLeaveTasks.length} Twisters on leave THIS MONTH`
     );
 
     // Always send Discord notification (whether there are employees on leave or not)
@@ -1160,7 +1205,7 @@ async function sendMonthlyLeaveSummary() {
       console.log("📱 Monthly leave summary sent to Discord");
     } else {
       console.log(
-        "📱 Monthly leave summary sent to Discord (no one on leave this month)"
+        "📱 Monthly leave summary sent to Discord (no Twisters on leave this month)"
       );
     }
   } catch (error) {
@@ -1183,32 +1228,39 @@ async function sendDiscordNotification(
       throw new Error("Discord webhook URL not configured");
     }
 
-    // Create a rich embed message with all form fields
-    let embedTitle = "📝 New Leave Request Submitted";
-    let embedColor = 0x00ff00; // Green color
+    // Create a rich embed message with Twist Digital branding
+    let embedTitle = "🎯 New Leave Request - Twist Digital";
+    let embedColor = 0x00d4aa; // Twist Digital teal color
+    let embedDescription =
+      "A new leave request has been submitted by one of our Twisters!";
 
     if (isSummary) {
       if (task.name.includes("Daily")) {
         if (targetDate) {
-          embedTitle = `📊 Daily Leave Summary - ${targetDate}`;
+          embedTitle = `📅 Daily Leave Report - ${targetDate}`;
+          embedDescription = `Here's who's taking time off on ${targetDate} at Twist Digital`;
         } else {
-          embedTitle = "📊 Daily Leave Summary - Today";
+          embedTitle = "📅 Daily Leave Report - Today";
+          embedDescription =
+            "Here's who's taking time off today at Twist Digital";
         }
-        embedColor = 0x0099ff; // Blue color
+        embedColor = 0x4a90e2; // Professional blue
       } else if (task.name.includes("Monthly")) {
-        embedTitle = "📈 Monthly Leave Summary - This Month";
-        embedColor = 0xff6600; // Orange color
+        embedTitle = "📊 Monthly Leave Overview - Twist Digital";
+        embedDescription =
+          "Monthly summary of all leave requests at Twist Digital";
+        embedColor = 0xff6b35; // Twist Digital orange
       }
     }
 
     const embed = {
       title: embedTitle,
       color: embedColor,
-      description: "", // We'll build this dynamically
+      description: embedDescription,
       fields: [],
       timestamp: new Date().toISOString(),
       footer: {
-        text: "ClickUp Leave Management System",
+        text: "Twist Digital • Leave Management System",
       },
     };
 
@@ -1216,9 +1268,23 @@ async function sendDiscordNotification(
     if (isSummary) {
       if (summaryTasks && summaryTasks.length > 0) {
         // Add summary statistics
+        let statusText;
+        if (task.name.includes("Monthly")) {
+          const currentMonth = new Date().toLocaleDateString("en-US", {
+            month: "long",
+          });
+          statusText = `**${summaryTasks.length}** Twister${
+            summaryTasks.length === 1 ? "" : "s"
+          } on leave in ${currentMonth}`;
+        } else {
+          statusText = `**${summaryTasks.length}** Twister${
+            summaryTasks.length === 1 ? "" : "s"
+          } on leave today`;
+        }
+
         embed.fields.push({
-          name: "📊 Summary Statistics",
-          value: `Total Employees on Leave: **${summaryTasks.length}**`,
+          name: "📊 Team Status",
+          value: statusText,
           inline: false,
         });
 
@@ -1231,19 +1297,19 @@ async function sendDiscordNotification(
           });
         }
 
-        // Group by employee and show their leave details
-        const employeeLeaveDetails = [];
+        // Group by Twister and show their leave details
+        const twisterLeaveDetails = [];
         summaryTasks.forEach((summaryTask) => {
-          // Try to get employee name from multiple sources
-          let employeeName = "Unknown";
+          // Try to get Twister name from multiple sources
+          let twisterName = "Unknown";
 
           // Source 1: Task name (primary source - most reliable for leave requests)
           if (summaryTask.name && summaryTask.name.trim() !== "") {
-            employeeName = summaryTask.name.trim();
+            twisterName = summaryTask.name.trim();
           }
           // Source 2: Creator username (fallback)
           else if (summaryTask.creator?.username) {
-            employeeName = summaryTask.creator.username;
+            twisterName = summaryTask.creator.username;
           }
           // Source 3: Custom field with "name" in it (last resort)
           else if (
@@ -1252,7 +1318,7 @@ async function sendDiscordNotification(
           ) {
             for (const field of summaryTask.custom_fields) {
               if (field.name.toLowerCase().includes("name") && field.value) {
-                employeeName = field.value;
+                twisterName = field.value;
                 break;
               }
             }
@@ -1304,7 +1370,7 @@ async function sendDiscordNotification(
           }
 
           // Build the leave detail string
-          let leaveDetail = `• **${employeeName}** - ${leaveType}`;
+          let leaveDetail = `• **${twisterName}** - ${leaveType}`;
           if (fromDate && toDate) {
             if (fromDate === toDate) {
               leaveDetail += ` (${fromDate})`;
@@ -1317,73 +1383,42 @@ async function sendDiscordNotification(
             leaveDetail += ` (${toDate})`;
           }
 
-          // Debug logging for employee name extraction
+          // Debug logging for Twister name extraction
           console.log(
-            `🔍 Employee name extracted: "${employeeName}" from task: "${summaryTask.name}"`
+            `🔍 Twister name extracted: "${twisterName}" from task: "${summaryTask.name}"`
           );
           console.log(`🔍 Leave type: "${leaveType}"`);
 
-          employeeLeaveDetails.push(leaveDetail);
+          twisterLeaveDetails.push(leaveDetail);
         });
 
-        if (employeeLeaveDetails.length > 0) {
+        if (twisterLeaveDetails.length > 0) {
           const summaryType = task.name.includes("Daily")
             ? targetDate
-              ? `Employees on Leave on ${targetDate}`
-              : "Employees on Leave Today"
-            : "Employees on Leave This Month";
+              ? `👥 Twisters Taking Time Off on ${targetDate}`
+              : "👥 Twisters Taking Time Off Today"
+            : "👥 Twisters Taking Time Off This Month";
           embed.fields.push({
-            name: `👥 ${summaryType}`,
-            value: employeeLeaveDetails.join("\n"),
+            name: summaryType,
+            value: twisterLeaveDetails.join("\n"),
             inline: false,
           });
         }
-
-        // Add task details for monthly summary
-        if (task.name.includes("Monthly")) {
-          const taskDetails = summaryTasks
-            .slice(0, 10)
-            .map((req) => {
-              let employeeName = "Unknown";
-
-              // Source 1: Task name (primary source - most reliable for leave requests)
-              if (req.name && req.name.trim() !== "") {
-                employeeName = req.name.trim();
-              }
-              // Source 2: Creator username (fallback)
-              else if (req.creator?.username) {
-                employeeName = req.creator.username;
-              }
-              // Source 3: Custom field with "name" in it (last resort)
-              else if (req.custom_fields && req.custom_fields.length > 0) {
-                for (const field of req.custom_fields) {
-                  if (
-                    field.name.toLowerCase().includes("name") &&
-                    field.value
-                  ) {
-                    employeeName = field.value;
-                    break;
-                  }
-                }
-              }
-
-              return `• **${employeeName}** - ${req.name}`;
-            })
-            .join("\n");
-
-          if (taskDetails) {
-            embed.fields.push({
-              name: "📋 Leave Request Details",
-              value: taskDetails,
-              inline: false,
-            });
-          }
-        }
       } else {
-        // No employees on leave - show appropriate message
+        // No Twisters on leave - show appropriate message
+        let noLeaveStatusText;
+        if (task.name.includes("Monthly")) {
+          const currentMonth = new Date().toLocaleDateString("en-US", {
+            month: "long",
+          });
+          noLeaveStatusText = `**0** Twisters on leave in ${currentMonth}`;
+        } else {
+          noLeaveStatusText = `**0** Twisters on leave today`;
+        }
+
         embed.fields.push({
-          name: "📊 Summary Statistics",
-          value: `Total Employees on Leave: **0**`,
+          name: "📊 Team Status",
+          value: noLeaveStatusText,
           inline: false,
         });
 
@@ -1398,9 +1433,9 @@ async function sendDiscordNotification(
 
         const summaryType = task.name.includes("Daily")
           ? targetDate
-            ? `No employees on leave on ${targetDate}! 🎉`
-            : "No employees on leave today! 🎉"
-          : "No employees on leave this month! 🎉";
+            ? `All Twisters are working on ${targetDate}! 🚀`
+            : "All Twisters are working today! 🚀"
+          : "All Twisters are working this month! 🚀";
 
         embed.fields.push({
           name: "✅ Status",
@@ -1411,17 +1446,16 @@ async function sendDiscordNotification(
     } else {
       // Handle individual task notifications (not summaries)
       embed.fields.push({
-        name: "👤 Employee",
-        value: user?.username || task.creator?.username || "Unknown User",
+        name: "👤 Twister",
+        value: `**${
+          user?.username || task.creator?.username || "Unknown User"
+        }**`,
         inline: true,
       });
 
       embed.fields.push({
-        name: "📅 Submission Date",
-        value:
-          new Date().toLocaleDateString() +
-          " " +
-          new Date().toLocaleTimeString(),
+        name: "📅 Submitted",
+        value: `**${new Date().toLocaleDateString()}** at ${new Date().toLocaleTimeString()}`,
         inline: true,
       });
 
@@ -1516,8 +1550,7 @@ async function sendDiscordNotification(
 
     const payload = {
       embeds: [embed],
-      username: "ClickUp Bot",
-      avatar_url: "https://clickup.com/favicon.ico",
+      username: "Twist Digital Bot",
     };
 
     await axios.post(discordWebhookUrl, payload, {
@@ -1564,21 +1597,21 @@ app.listen(PORT, () => {
   );
   console.log(`🔍 Find ClickUp lists: http://localhost:${PORT}/find-lists`);
 
-  console.log("⏰ Production schedules configured:");
-  console.log("⏰ Daily Summary: 10:00 AM daily (Today's Leave)");
+  console.log("⏰ Twist Digital Leave Management Schedules:");
+  console.log("⏰ Daily Report: 10:00 AM daily (Today's Twisters on Leave)");
   console.log(
-    "⏰ Monthly Summary: 30th of every month at 6:00 PM (This month's leave)"
+    "⏰ Monthly Overview: 30th of every month at 6:00 PM (This month's leave summary)"
   );
 
   // Schedule daily check at 10:00 AM (shows today's leave)
   console.log(
-    "⏰ Scheduling daily leave check at 10:00 AM (Today's Leave Summary)..."
+    "⏰ Scheduling daily leave report at 10:00 AM (Today's Twisters on Leave)..."
   );
   cron.schedule(
     "0 10 * * *", // 10:00 AM daily
     async () => {
       try {
-        console.log("🕙 10:00 AM - Today's leave summary triggered...");
+        console.log("🕙 10:00 AM - Today's Twisters leave report triggered...");
         await sendDailyLeaveSummary();
       } catch (error) {
         console.error("❌ Error in daily scheduled check:", error);
@@ -1591,14 +1624,14 @@ app.listen(PORT, () => {
 
   // Schedule monthly summary (30th of every month at 6:00 PM - shows this month's leave)
   console.log(
-    "⏰ Scheduling monthly summary on the 30th of every month at 6:00 PM (This Month's Summary)..."
+    "⏰ Scheduling monthly overview on the 30th of every month at 6:00 PM (This Month's Summary)..."
   );
   cron.schedule(
     "0 18 30 * *", // 30th of every month at 6:00 PM
     async () => {
       try {
         console.log(
-          "🕔 30th of every month at 6:00 PM - This month's leave summary triggered..."
+          "🕔 30th of every month at 6:00 PM - This month's Twisters leave overview triggered..."
         );
         await sendMonthlyLeaveSummary();
       } catch (error) {
@@ -1611,7 +1644,9 @@ app.listen(PORT, () => {
   );
 
   // Initial check removed - no real-time notifications needed
-  console.log("✅ Server ready! Scheduled summaries will run automatically.");
+  console.log(
+    "✅ Twist Digital Leave Management System ready! Scheduled reports will run automatically."
+  );
 });
 
 module.exports = app;
