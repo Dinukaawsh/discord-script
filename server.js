@@ -1612,6 +1612,24 @@ app.listen(PORT, () => {
     "⏰ Monthly Overview: 30th of every month at 6:00 PM (This month's leave summary)"
   );
 
+  // Schedule fake wake-up at 9:50 AM to wake up the app
+  console.log("⏰ Scheduling fake wake-up at 9:50 AM to prevent sleep mode...");
+  cron.schedule(
+    "50 9 * * *", // 9:50 AM daily
+    async () => {
+      try {
+        console.log("🌅 9:50 AM - Fake wake-up triggered to keep app alive...");
+        // Just log - no actual work, just wakes up the app
+        console.log("✅ App is awake and ready for 10:00 AM daily check");
+      } catch (error) {
+        console.error("❌ Error in fake wake-up:", error);
+      }
+    },
+    {
+      timezone: "Asia/Colombo", // Sri Lanka timezone
+    }
+  );
+
   // Schedule daily check at 10:00 AM (shows today's leave)
   console.log(
     "⏰ Scheduling daily leave report at 10:00 AM (Today's Twisters on Leave)..."
@@ -1624,6 +1642,25 @@ app.listen(PORT, () => {
         await sendDailyLeaveSummary();
       } catch (error) {
         console.error("❌ Error in daily scheduled check:", error);
+      }
+    },
+    {
+      timezone: "Asia/Colombo", // Sri Lanka timezone
+    }
+  );
+
+  // Schedule fake wake-up for monthly check at 5:50 PM on 30th
+  console.log(
+    "⏰ Scheduling fake wake-up for monthly check at 5:50 PM on 30th..."
+  );
+  cron.schedule(
+    "50 17 30 * *", // 30th of every month at 5:50 PM
+    async () => {
+      try {
+        console.log("🌅 5:50 PM on 30th - Fake wake-up for monthly check...");
+        console.log("✅ App is awake and ready for 6:00 PM monthly overview");
+      } catch (error) {
+        console.error("❌ Error in monthly fake wake-up:", error);
       }
     },
     {
