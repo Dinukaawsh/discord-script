@@ -1213,6 +1213,73 @@ async function sendMonthlyLeaveSummary() {
   }
 }
 
+// Helper: get person name from a leave task (for grouping)
+function getPersonNameFromTask(summaryTask) {
+  if (summaryTask.name && summaryTask.name.trim() !== "") {
+    return summaryTask.name.trim();
+  }
+  if (summaryTask.creator?.username) {
+    return summaryTask.creator.username;
+  }
+  if (summaryTask.custom_fields && summaryTask.custom_fields.length > 0) {
+    for (const field of summaryTask.custom_fields) {
+      if (field.name && field.name.toLowerCase().includes("name") && field.value) {
+        return field.value;
+      }
+    }
+  }
+  return "Unknown";
+}
+
+// Helper: get leave type and from/to dates from a task
+function getLeavePeriodFromTask(summaryTask) {
+  let leaveType = "Leave";
+  let fromDate = null;
+  let toDate = null;
+
+  if (summaryTask.custom_fields && summaryTask.custom_fields.length > 0) {
+    for (const field of summaryTask.custom_fields) {
+      if (field.type === "drop_down" && field.name && field.name.toLowerCase().includes("type")) {
+        if (field.type_config && field.type_config.options) {
+          const option = field.type_config.options.find(
+            (opt) => opt.id === field.value || opt.orderindex === field.value
+          );
+          leaveType = option ? option.name : field.value;
+        } else {
+          leaveType = field.value || leaveType;
+        }
+      } else if (field.name && field.name.toLowerCase().includes("from") && field.value) {
+        const ts = parseInt(field.value);
+        if (!isNaN(ts)) fromDate = new Date(ts);
+      } else if (field.name && field.name.toLowerCase().includes("to") && field.value) {
+        const ts = parseInt(field.value);
+        if (!isNaN(ts)) toDate = new Date(ts);
+      }
+    }
+  }
+  if (!fromDate && summaryTask.start_date) {
+    fromDate = new Date(parseInt(summaryTask.start_date));
+  }
+  if (!toDate && summaryTask.due_date) {
+    toDate = new Date(parseInt(summaryTask.due_date));
+  }
+  if (!fromDate && toDate) fromDate = toDate;
+  if (!toDate && fromDate) toDate = fromDate;
+  return { leaveType, fromDate, toDate };
+}
+
+// Helper: count calendar days in [from, to] that fall within [monthStart, monthEnd]
+function countDaysInMonth(fromDate, toDate, monthStart, monthEnd) {
+  if (!fromDate || !toDate || isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+    return 0;
+  }
+  const from = fromDate < monthStart ? monthStart : fromDate;
+  const to = toDate > monthEnd ? monthEnd : toDate;
+  if (from > to) return 0;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((to - from) / msPerDay) + 1;
+}
+
 // Function to send Discord notification
 async function sendDiscordNotification(
   task,
@@ -1238,17 +1305,17 @@ async function sendDiscordNotification(
       if (task.name.includes("Daily")) {
         if (targetDate) {
           embedTitle = `📅 Daily Leave Report - ${targetDate}`;
-          embedDescription = `Here's who's taking time off on ${targetDate} at Twist Digital`;
+          embedDescription = `Here's who's taking time off on ${targetDate} of twisters at Twist Digital`;
         } else {
           embedTitle = "📅 Daily Leave Report - Today";
           embedDescription =
-            "Here's who's taking time off today at Twist Digital";
+            "Here's who's taking time off today of twisters at Twist Digital";
         }
         embedColor = 0x4a90e2; // Professional blue
       } else if (task.name.includes("Monthly")) {
         embedTitle = "📊 Monthly Leave Overview - Twist Digital";
         embedDescription =
-          "Monthly summary of all leave requests at Twist Digital";
+          "Monthly summary of all leave requests of twisters at Twist Digital";
         embedColor = 0xff6b35; // Twist Digital orange
       }
     }
@@ -1299,98 +1366,126 @@ async function sendDiscordNotification(
 
         // Group by Twister and show their leave details
         const twisterLeaveDetails = [];
-        summaryTasks.forEach((summaryTask) => {
-          // Try to get Twister name from multiple sources
-          let twisterName = "Unknown";
 
-          // Source 1: Task name (primary source - most reliable for leave requests)
-          if (summaryTask.name && summaryTask.name.trim() !== "") {
-            twisterName = summaryTask.name.trim();
-          }
-          // Source 2: Creator username (fallback)
-          else if (summaryTask.creator?.username) {
-            twisterName = summaryTask.creator.username;
-          }
-          // Source 3: Custom field with "name" in it (last resort)
-          else if (
-            summaryTask.custom_fields &&
-            summaryTask.custom_fields.length > 0
-          ) {
-            for (const field of summaryTask.custom_fields) {
-              if (field.name.toLowerCase().includes("name") && field.value) {
-                twisterName = field.value;
-                break;
-              }
+        if (task.name.includes("Monthly") && summaryTasks.length > 0) {
+          // Monthly: one entry per person, list all leave dates/periods, then total days per person
+          const sriLankaDate = getSriLankaDate();
+          const monthStart = moment
+            .tz("Asia/Colombo")
+            .year(sriLankaDate.year)
+            .month(sriLankaDate.month)
+            .date(1)
+            .hour(0)
+            .minute(0)
+            .second(0)
+            .millisecond(0)
+            .toDate();
+          const monthEnd = moment
+            .tz("Asia/Colombo")
+            .year(sriLankaDate.year)
+            .month(sriLankaDate.month + 1)
+            .date(0)
+            .hour(23)
+            .minute(59)
+            .second(59)
+            .millisecond(999)
+            .toDate();
+
+          const byPerson = new Map();
+          for (const summaryTask of summaryTasks) {
+            const name = getPersonNameFromTask(summaryTask);
+            if (!byPerson.has(name)) {
+              byPerson.set(name, []);
             }
+            byPerson.get(name).push(summaryTask);
           }
 
-          let leaveType = "Leave";
-          let fromDate = "";
-          let toDate = "";
+          for (const [personName, personTasks] of byPerson) {
+            let totalDaysInMonth = 0;
+            const periodLines = [];
+            for (const summaryTask of personTasks) {
+              const { leaveType, fromDate, toDate } =
+                getLeavePeriodFromTask(summaryTask);
+              const daysInMonth = countDaysInMonth(
+                fromDate,
+                toDate,
+                monthStart,
+                monthEnd
+              );
+              totalDaysInMonth += daysInMonth;
 
-          // Extract leave type and dates from custom fields
-          if (
-            summaryTask.custom_fields &&
-            summaryTask.custom_fields.length > 0
-          ) {
-            for (const field of summaryTask.custom_fields) {
-              if (
-                field.type === "drop_down" &&
-                field.name.toLowerCase().includes("type")
-              ) {
-                if (field.type_config && field.type_config.options) {
-                  const option = field.type_config.options.find(
-                    (opt) =>
-                      opt.id === field.value || opt.orderindex === field.value
-                  );
-                  leaveType = option ? option.name : field.value;
+              const fromStr = fromDate
+                ? fromDate.toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : "";
+              const toStr = toDate
+                ? toDate.toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })
+                : "";
+              let periodStr = `  • ${leaveType}: `;
+              if (fromStr && toStr) {
+                if (fromStr === toStr) {
+                  periodStr += fromStr;
                 } else {
-                  leaveType = field.value;
+                  periodStr += `${fromStr} → ${toStr}`;
                 }
-              } else if (field.name.toLowerCase().includes("from")) {
-                try {
-                  const timestamp = parseInt(field.value);
-                  if (!isNaN(timestamp)) {
-                    fromDate = new Date(timestamp).toLocaleDateString();
-                  }
-                } catch (error) {
-                  fromDate = field.value;
+                if (daysInMonth > 0) {
+                  periodStr += ` (${daysInMonth} day${daysInMonth === 1 ? "" : "s"})`;
                 }
-              } else if (field.name.toLowerCase().includes("to")) {
-                try {
-                  const timestamp = parseInt(field.value);
-                  if (!isNaN(timestamp)) {
-                    toDate = new Date(timestamp).toLocaleDateString();
-                  }
-                } catch (error) {
-                  toDate = field.value;
-                }
+              } else if (fromStr) {
+                periodStr += fromStr;
+              } else if (toStr) {
+                periodStr += toStr;
+              } else {
+                periodStr += "—";
               }
+              periodLines.push(periodStr);
             }
+            const block =
+              `**${personName}**\n` +
+              periodLines.join("\n") +
+              `\n  **Total: ${totalDaysInMonth} day${totalDaysInMonth === 1 ? "" : "s"} this month**`;
+            twisterLeaveDetails.push(block);
           }
 
-          // Build the leave detail string
-          let leaveDetail = `• **${twisterName}** - ${leaveType}`;
-          if (fromDate && toDate) {
-            if (fromDate === toDate) {
-              leaveDetail += ` (${fromDate})`;
-            } else {
-              leaveDetail += ` (${fromDate} to ${toDate})`;
+          // Team status: show unique person count for monthly
+          const uniqueCount = byPerson.size;
+          const currentMonthName = new Date().toLocaleDateString("en-US", {
+            month: "long",
+          });
+          embed.fields[0].value = `**${uniqueCount}** Twister${
+            uniqueCount === 1 ? "" : "s"
+          } on leave in ${currentMonthName}`;
+        } else {
+          // Daily: one line per task (existing behavior)
+          summaryTasks.forEach((summaryTask) => {
+            const twisterName = getPersonNameFromTask(summaryTask);
+            const { leaveType, fromDate, toDate } =
+              getLeavePeriodFromTask(summaryTask);
+            const fromStr = fromDate ? fromDate.toLocaleDateString() : "";
+            const toStr = toDate ? toDate.toLocaleDateString() : "";
+
+            let leaveDetail = `• **${twisterName}** - ${leaveType}`;
+            if (fromStr && toStr) {
+              if (fromStr === toStr) {
+                leaveDetail += ` (${fromStr})`;
+              } else {
+                leaveDetail += ` (${fromStr} to ${toStr})`;
+              }
+            } else if (fromStr) {
+              leaveDetail += ` (${fromStr})`;
+            } else if (toStr) {
+              leaveDetail += ` (${toStr})`;
             }
-          } else if (fromDate) {
-            leaveDetail += ` (${fromDate})`;
-          } else if (toDate) {
-            leaveDetail += ` (${toDate})`;
-          }
-
-          // Debug logging for Twister name extraction
-          console.log(
-            `🔍 Twister name extracted: "${twisterName}" from task: "${summaryTask.name}"`
-          );
-          console.log(`🔍 Leave type: "${leaveType}"`);
-
-          twisterLeaveDetails.push(leaveDetail);
-        });
+            twisterLeaveDetails.push(leaveDetail);
+          });
+        }
 
         if (twisterLeaveDetails.length > 0) {
           const summaryType = task.name.includes("Daily")
@@ -1398,11 +1493,55 @@ async function sendDiscordNotification(
               ? `👥 Twisters Taking Time Off on ${targetDate}`
               : "👥 Twisters Taking Time Off Today"
             : "👥 Twisters Taking Time Off This Month";
-          embed.fields.push({
-            name: summaryType,
-            value: twisterLeaveDetails.join("\n"),
-            inline: false,
-          });
+          const fullValue = twisterLeaveDetails.join("\n\n");
+          const DISCORD_FIELD_VALUE_LIMIT = 1024;
+          const maxChunkLen = DISCORD_FIELD_VALUE_LIMIT - 4; // safe margin
+
+          if (fullValue.length <= maxChunkLen) {
+            embed.fields.push({
+              name: summaryType,
+              value: fullValue,
+              inline: false,
+            });
+          } else {
+            // Split into chunks so each field value stays under Discord's 1024 limit (split at person boundaries)
+            const chunks = [];
+            let current = "";
+            const separator = "\n\n";
+            for (let i = 0; i < twisterLeaveDetails.length; i++) {
+              const block = twisterLeaveDetails[i];
+              const withBlock = current ? current + separator + block : block;
+              if (withBlock.length <= maxChunkLen) {
+                current = withBlock;
+              } else {
+                if (current) chunks.push(current);
+                current = "";
+                // If one person's block is over limit, split by lines to avoid truncating mid-sentence
+                if (block.length <= maxChunkLen) {
+                  current = block;
+                } else {
+                  const lines = block.split("\n");
+                  for (const line of lines) {
+                    const withLine = current ? current + "\n" + line : line;
+                    if (withLine.length <= maxChunkLen) {
+                      current = withLine;
+                    } else {
+                      if (current) chunks.push(current);
+                      current = line.length <= maxChunkLen ? line : line.slice(0, maxChunkLen - 3) + "...";
+                    }
+                  }
+                }
+              }
+            }
+            if (current) chunks.push(current);
+            chunks.forEach((chunk, idx) => {
+              embed.fields.push({
+                name: chunks.length > 1 ? `${summaryType} (${idx + 1}/${chunks.length})` : summaryType,
+                value: chunk,
+                inline: false,
+              });
+            });
+          }
         }
       } else {
         // No Twisters on leave - show appropriate message

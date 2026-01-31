@@ -38,9 +38,9 @@ In Render dashboard, add these environment variables:
 
 ```
 DISCORD_WEBHOOK_URL=your_discord_webhook_url
-LEAVE_LIST_ID=901801890075
+LEAVE_LIST_ID=your list id
 CLICKUP_API_TOKEN=your_clickup_api_token
-CLICKUP_WORKSPACE_ID=9018099264
+CLICKUP_WORKSPACE_ID=your workpace id
 NODE_ENV=production
 ```
 
@@ -60,7 +60,7 @@ NODE_ENV=production
 
 - **Real-time notifications** when forms are submitted
 - **Daily summary at 10:00 AM** (yesterday's data)
-- **Additional check at 2:00 PM** (yesterday's data)  
+- **Additional check at 2:00 PM** (yesterday's data)
 - **Weekly summary Friday 6:00 PM** (last week's data)
 
 ## **📱 Test Your Deployment:**
