@@ -2,28 +2,27 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
-const DEFAULT_LIST_ID = '901810375140';
-const DEFAULT_WORK_CALENDAR_LIST_ID = '901811026628';
-
 @Injectable()
 export class ClickUpService {
   private readonly baseUrl = 'https://api.clickup.com/api/v2';
-  private readonly listId: string;
-  private readonly workCalendarListId: string;
+  private readonly listId: string | undefined;
+  private readonly workCalendarListId: string | undefined;
   private readonly token: string | undefined;
 
   constructor(private config: ConfigService) {
     this.token = this.config.get<string>('CLICKUP_API_TOKEN');
-    this.listId = this.config.get<string>('LEAVE_LIST_ID') || DEFAULT_LIST_ID;
-    this.workCalendarListId = this.config.get<string>('WORK_CALENDAR_LIST_ID') || DEFAULT_WORK_CALENDAR_LIST_ID;
-  }
-
-  getWorkCalendarListId(): string {
-    return this.workCalendarListId;
+    this.listId = this.config.get<string>('LEAVE_LIST_ID');
+    this.workCalendarListId = this.config.get<string>('WORK_CALENDAR_LIST_ID');
   }
 
   getListId(): string {
+    if (!this.listId) throw new Error('LEAVE_LIST_ID not configured in env');
     return this.listId;
+  }
+
+  getWorkCalendarListId(): string {
+    if (!this.workCalendarListId) throw new Error('WORK_CALENDAR_LIST_ID not configured in env');
+    return this.workCalendarListId;
   }
 
   isConfigured(): boolean {
@@ -32,7 +31,7 @@ export class ClickUpService {
 
   async getTasks(params?: { includeClosed?: boolean }): Promise<any[]> {
     if (!this.token) throw new Error('ClickUp API token not configured');
-    const { data } = await axios.get(`${this.baseUrl}/list/${this.listId}/task`, {
+    const { data } = await axios.get(`${this.baseUrl}/list/${this.getListId()}/task`, {
       headers: { Authorization: this.token, 'Content-Type': 'application/json' },
       params: {
         include_closed: params?.includeClosed ?? true,
@@ -63,7 +62,7 @@ export class ClickUpService {
     reverse?: boolean;
   }): Promise<any[]> {
     if (!this.token) throw new Error('ClickUp API token not configured');
-    const { data } = await axios.get(`${this.baseUrl}/list/${this.listId}/task`, {
+    const { data } = await axios.get(`${this.baseUrl}/list/${this.getListId()}/task`, {
       headers: { Authorization: this.token, 'Content-Type': 'application/json' },
       params: {
         include_closed: params?.includeClosed ?? true,

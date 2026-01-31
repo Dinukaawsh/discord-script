@@ -122,7 +122,7 @@ In **Configuration → Environment variables**, add:
 | `CLICKUP_API_TOKEN` | your ClickUp API token |
 | `DISCORD_WEBHOOK_URL` | your Discord webhook URL |
 | `LEAVE_LIST_ID` | your ClickUp leave list ID |
-| `WORK_CALENDAR_LIST_ID` | (optional) Work Calendar list ID for squad-on-next-week; default `901811026628` |
+| `WORK_CALENDAR_LIST_ID` | your Work Calendar list ID (required for squad-on-next-week) |
 
 Upload `lambda.zip` as the function code.
 

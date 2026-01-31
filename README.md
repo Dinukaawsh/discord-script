@@ -52,9 +52,9 @@ Create a `.env` file in the project root:
 ```env
 CLICKUP_API_TOKEN=pk_xxxxx
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-LEAVE_LIST_ID=901810375140
+LEAVE_LIST_ID=your id
 CLICKUP_WORKSPACE_ID=your_workspace_id
-WORK_CALENDAR_LIST_ID=901811026628
+WORK_CALENDAR_LIST_ID=your id
 ```
 
 Run the server:
@@ -76,7 +76,7 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DISCORD_WEBHOOK_URL` | Yes | Discord webhook URL for the target channel. |
 | `LEAVE_LIST_ID` | Yes | ClickUp list ID that contains leave request tasks. |
 | `CLICKUP_WORKSPACE_ID` | Yes* | ClickUp workspace (team) ID; needed for `find-lists` and `find-by-name`. |
-| `WORK_CALENDAR_LIST_ID` | No | ClickUp list ID for “Work Calendar” (squad-on-next-week). Default: `901811026628`. |
+| `WORK_CALENDAR_LIST_ID` | Yes* | ClickUp list ID for “Work Calendar” (squad-on-next-week). Required for `/squad-next-week` and `/test-squad-notification`. |
 | `PORT` | No | Server port (default `3000`). |
 
 ---
