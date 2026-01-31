@@ -1723,115 +1723,114 @@ app.get("/ping", (req, res) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`💚 Health check: http://localhost:${PORT}/health`);
-  console.log(
-    `🧪 Test daily summary: http://localhost:${PORT}/test-daily-summary`
-  );
-  console.log(
-    `🧪 Test daily summary for specific date: http://localhost:${PORT}/test-daily-summary?date=YYYY-MM-DD`
-  );
-  console.log(
-    `🧪 Test monthly summary: http://localhost:${PORT}/test-monthly-summary`
-  );
-  console.log(
-    `🔍 Debug ClickUp data: http://localhost:${PORT}/debug-clickup-data`
-  );
-  console.log(`🌍 Debug timezone: http://localhost:${PORT}/debug-timezone`);
-  console.log(
-    `📅 Check leave on specific date: http://localhost:${PORT}/check-leave-on-date/YYYY-MM-DD`
-  );
-  console.log(`🔍 Find ClickUp lists: http://localhost:${PORT}/find-lists`);
+// Start server only when NOT running in AWS Lambda (EventBridge will invoke the handler instead)
+if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`💚 Health check: http://localhost:${PORT}/health`);
+    console.log(
+      `🧪 Test daily summary: http://localhost:${PORT}/test-daily-summary`
+    );
+    console.log(
+      `🧪 Test daily summary for specific date: http://localhost:${PORT}/test-daily-summary?date=YYYY-MM-DD`
+    );
+    console.log(
+      `🧪 Test monthly summary: http://localhost:${PORT}/test-monthly-summary`
+    );
+    console.log(
+      `🔍 Debug ClickUp data: http://localhost:${PORT}/debug-clickup-data`
+    );
+    console.log(`🌍 Debug timezone: http://localhost:${PORT}/debug-timezone`);
+    console.log(
+      `📅 Check leave on specific date: http://localhost:${PORT}/check-leave-on-date/YYYY-MM-DD`
+    );
+    console.log(`🔍 Find ClickUp lists: http://localhost:${PORT}/find-lists`);
 
-  console.log("⏰ Twist Digital Leave Management Schedules:");
-  console.log("⏰ Daily Report: 10:00 AM daily (Today's Twisters on Leave)");
-  console.log(
-    "⏰ Monthly Overview: 30th of every month at 6:00 PM (This month's leave summary)"
-  );
+    console.log("⏰ Twist Digital Leave Management Schedules:");
+    console.log("⏰ Daily Report: 10:00 AM daily (Today's Twisters on Leave)");
+    console.log(
+      "⏰ Monthly Overview: 30th of every month at 6:00 PM (This month's leave summary)"
+    );
 
-  // Schedule fake wake-up at 9:50 AM to wake up the app
-  console.log("⏰ Scheduling fake wake-up at 9:50 AM to prevent sleep mode...");
-  cron.schedule(
-    "50 9 * * *", // 9:50 AM daily
-    async () => {
-      try {
-        console.log("🌅 9:50 AM - Fake wake-up triggered to keep app alive...");
-        // Just log - no actual work, just wakes up the app
-        console.log("✅ App is awake and ready for 10:00 AM daily check");
-      } catch (error) {
-        console.error("❌ Error in fake wake-up:", error);
-      }
-    },
-    {
-      timezone: "Asia/Colombo", // Sri Lanka timezone
-    }
-  );
+    // Schedule fake wake-up at 9:50 AM to wake up the app
+    console.log("⏰ Scheduling fake wake-up at 9:50 AM to prevent sleep mode...");
+    cron.schedule(
+      "50 9 * * *", // 9:50 AM daily
+      async () => {
+        try {
+          console.log("🌅 9:50 AM - Fake wake-up triggered to keep app alive...");
+          console.log("✅ App is awake and ready for 10:00 AM daily check");
+        } catch (error) {
+          console.error("❌ Error in fake wake-up:", error);
+        }
+      },
+      { timezone: "Asia/Colombo" }
+    );
 
-  // Schedule daily check at 10:00 AM (shows today's leave)
-  console.log(
-    "⏰ Scheduling daily leave report at 10:00 AM (Today's Twisters on Leave)..."
-  );
-  cron.schedule(
-    "0 10 * * *", // 10:00 AM daily
-    async () => {
-      try {
-        console.log("🕙 10:00 AM - Today's Twisters leave report triggered...");
-        await sendDailyLeaveSummary();
-      } catch (error) {
-        console.error("❌ Error in daily scheduled check:", error);
-      }
-    },
-    {
-      timezone: "Asia/Colombo", // Sri Lanka timezone
-    }
-  );
+    // Schedule daily check at 10:00 AM (shows today's leave)
+    console.log(
+      "⏰ Scheduling daily leave report at 10:00 AM (Today's Twisters on Leave)..."
+    );
+    cron.schedule(
+      "0 10 * * *",
+      async () => {
+        try {
+          console.log("🕙 10:00 AM - Today's Twisters leave report triggered...");
+          await sendDailyLeaveSummary();
+        } catch (error) {
+          console.error("❌ Error in daily scheduled check:", error);
+        }
+      },
+      { timezone: "Asia/Colombo" }
+    );
 
-  // Schedule fake wake-up for monthly check at 5:50 PM on 30th
-  console.log(
-    "⏰ Scheduling fake wake-up for monthly check at 5:50 PM on 30th..."
-  );
-  cron.schedule(
-    "50 17 30 * *", // 30th of every month at 5:50 PM
-    async () => {
-      try {
-        console.log("🌅 5:50 PM on 30th - Fake wake-up for monthly check...");
-        console.log("✅ App is awake and ready for 6:00 PM monthly overview");
-      } catch (error) {
-        console.error("❌ Error in monthly fake wake-up:", error);
-      }
-    },
-    {
-      timezone: "Asia/Colombo", // Sri Lanka timezone
-    }
-  );
+    // Schedule monthly summary (30th of every month at 6:00 PM)
+    console.log(
+      "⏰ Scheduling monthly overview on the 30th at 6:00 PM (This Month's Summary)..."
+    );
+    cron.schedule(
+      "0 18 30 * *",
+      async () => {
+        try {
+          console.log(
+            "🕔 30th at 6:00 PM - This month's Twisters leave overview triggered..."
+          );
+          await sendMonthlyLeaveSummary();
+        } catch (error) {
+          console.error("❌ Error in monthly summary:", error);
+        }
+      },
+      { timezone: "Asia/Colombo" }
+    );
 
-  // Schedule monthly summary (30th of every month at 6:00 PM - shows this month's leave)
-  console.log(
-    "⏰ Scheduling monthly overview on the 30th of every month at 6:00 PM (This Month's Summary)..."
-  );
-  cron.schedule(
-    "0 18 30 * *", // 30th of every month at 6:00 PM
-    async () => {
-      try {
-        console.log(
-          "🕔 30th of every month at 6:00 PM - This month's Twisters leave overview triggered..."
-        );
-        await sendMonthlyLeaveSummary();
-      } catch (error) {
-        console.error("❌ Error in monthly summary:", error);
-      }
-    },
-    {
-      timezone: "Asia/Colombo", // Sri Lanka timezone
-    }
-  );
+    console.log(
+      "✅ Twist Digital Leave Management System ready! Scheduled reports will run automatically."
+    );
+  });
+}
 
-  // Initial check removed - no real-time notifications needed
-  console.log(
-    "✅ Twist Digital Leave Management System ready! Scheduled reports will run automatically."
-  );
-});
+/**
+ * AWS Lambda handler for EventBridge (no HTTP server).
+ * EventBridge rules pass: { "schedule": "daily" } or { "schedule": "monthly" }.
+ * - daily: run at 10:00 AM Sri Lanka (use cron 04:30 UTC)
+ * - monthly: run on 30th at 6:00 PM Sri Lanka (use cron 12:30 UTC on 30th)
+ */
+exports.handler = async (event) => {
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    require("dotenv").config(); // optional: load .env in Lambda if you bundle it
+  }
+  const schedule = event?.schedule ?? event?.detail?.schedule ?? event?.scheduleType;
+  if (schedule === "monthly") {
+    console.log("📊 Lambda: Running monthly leave summary...");
+    await sendMonthlyLeaveSummary();
+    return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: "monthly" }) };
+  }
+  if (schedule === "daily" || !schedule) {
+    console.log("📅 Lambda: Running daily leave summary...");
+    await sendDailyLeaveSummary();
+    return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: "daily" }) };
+  }
+  return { statusCode: 400, body: JSON.stringify({ error: "Unknown schedule", received: schedule }) };
+};
 
 module.exports = app;
