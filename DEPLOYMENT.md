@@ -85,27 +85,33 @@ NODE_ENV=production
 
 ---
 
-## **☁️ Deploy on AWS Lambda + EventBridge (serverless)**
+## **☁️ Deploy on AWS Lambda + EventBridge (serverless) – NestJS**
 
-Run the same logic on a schedule **without a 24/7 server**: Lambda runs only when EventBridge triggers it (daily 10:00 AM and 30th 6:00 PM **Sri Lanka time**).
+Run the NestJS app on a schedule **without a 24/7 server**: Lambda runs only when EventBridge triggers it (daily 10:00 AM and 30th 6:00 PM **Sri Lanka time**).
 
 ### **Prerequisites**
 - AWS account
 - AWS CLI configured (or use AWS Console)
 
-### **1. Package for Lambda**
+### **1. Package for Lambda (NestJS)**
 
 ```bash
-# Install production deps and create a zip (from project root)
+# Build NestJS
+npm run build
+
+# Package: dist/ + production node_modules into a zip
+cp package.json dist/
+cd dist
 npm install --production
-zip -r function.zip node_modules server.js package.json
-# Optional: add .env if you don’t set env vars in Lambda (not recommended for secrets)
+zip -r ../lambda.zip .
+cd ..
+# lambda.zip is ready to upload to Lambda
 ```
 
 ### **2. Create the Lambda function**
 
 - **Runtime:** Node.js 18.x or 20.x
-- **Handler:** `server.handler`
+- **Handler:** `lambda.handler` (file `lambda.js` in the root of the zip)
 - **Timeout:** 30 seconds
 - **Memory:** 128 MB is enough
 
@@ -116,9 +122,9 @@ In **Configuration → Environment variables**, add:
 | `CLICKUP_API_TOKEN` | your ClickUp API token |
 | `DISCORD_WEBHOOK_URL` | your Discord webhook URL |
 | `LEAVE_LIST_ID` | your ClickUp leave list ID |
-| `CLICKUP_WORKSPACE_ID` | (optional) workspace ID |
+| `WORK_CALENDAR_LIST_ID` | (optional) Work Calendar list ID for squad-on-next-week; default `901811026628` |
 
-Upload `function.zip` as the function code.
+Upload `lambda.zip` as the function code.
 
 ### **3. EventBridge rules (UTC)**
 
@@ -126,13 +132,15 @@ Lambda runs in **UTC**. Sri Lanka is **UTC+5:30**, so:
 
 - **10:00 AM Sri Lanka** → **04:30 UTC**
 - **30th 6:00 PM Sri Lanka** → **12:30 UTC** on the 30th
+- **Friday 6:00 PM Sri Lanka** (squad on next week) → **12:30 UTC** every Friday
 
-Create **two** EventBridge rules that trigger this Lambda:
+Create **three** EventBridge rules that trigger this Lambda:
 
 | Rule name | Schedule type | Cron (UTC) | Target payload |
 |-----------|--------------|------------|----------------|
 | `leave-daily` | Schedule | `cron(30 4 * * ? *)` | `{"schedule":"daily"}` |
 | `leave-monthly` | Schedule | `cron(30 12 30 * ? *)` | `{"schedule":"monthly"}` |
+| `squad-weekly` | Schedule | `cron(30 12 ? * FRI *)` | `{"schedule":"squad_weekly"}` |
 
 **In AWS Console:**
 
@@ -142,9 +150,12 @@ Create **two** EventBridge rules that trigger this Lambda:
    - **Cron expression:** `30 4 * * ? *` (04:30 UTC daily)
    - **Target:** This Lambda
    - **Payload:** Constant JSON `{"schedule":"daily"}`
-3. Repeat for **Name:** `leave-monthly`
+3. **Name:** `leave-monthly`
    - **Cron:** `30 12 30 * ? *` (12:30 UTC on 30th of every month)
    - **Payload:** `{"schedule":"monthly"}`
+4. **Name:** `squad-weekly`
+   - **Cron:** `30 12 ? * FRI *` (12:30 UTC every Friday = 6:00 PM Sri Lanka)
+   - **Payload:** `{"schedule":"squad_weekly"}` — sends Discord: which squad is on next week (from Work Calendar list)
 
 ### **4. Permissions**
 
@@ -153,7 +164,7 @@ Create **two** EventBridge rules that trigger this Lambda:
 
 ### **5. Test**
 
-- **From AWS Console:** Lambda → Test → create test event with body `{"schedule":"daily"}` or `{"schedule":"monthly"}`.
+- **From AWS Console:** Lambda → Test → create test event with body `{"schedule":"daily"}`, `{"schedule":"monthly"}`, or `{"schedule":"squad_weekly"}`.
 - **From CLI:**
   ```bash
   aws lambda invoke --function-name YOUR_FUNCTION_NAME --payload '{"schedule":"daily"}' response.json && cat response.json
@@ -165,8 +176,9 @@ Create **two** EventBridge rules that trigger this Lambda:
 |------|-------------------|--------|
 | Every day 10:00 AM Sri Lanka | `cron(30 4 * * ? *)` | `{"schedule":"daily"}` |
 | 30th of month 6:00 PM Sri Lanka | `cron(30 12 30 * ? *)` | `{"schedule":"monthly"}` |
+| Every Friday 6:00 PM Sri Lanka (squad on next week) | `cron(30 12 ? * FRI *)` | `{"schedule":"squad_weekly"}` |
 
-The same `server.js` runs locally (Express + cron) or in Lambda (handler only); no code change needed when you switch.
+The same NestJS app runs locally (HTTP server) or in Lambda (handler only); no code change needed when you switch.
 
 ---
 **🎉 Congratulations! Your ClickUp Discord integration is now deployed and accessible to everyone!**
