@@ -180,5 +180,7 @@ Create **three** EventBridge rules that trigger this Lambda:
 
 The same NestJS app runs locally (HTTP server) or in Lambda (handler only); no code change needed when you switch.
 
+**Note:** Weekly leave summary is available as an HTTP endpoint only (`GET /test-weekly-summary`); no EventBridge rule is needed. Use it manually if you want a weekly Discord notification.
+
 ---
 **🎉 Congratulations! Your ClickUp Discord integration is now deployed and accessible to everyone!**

@@ -68,12 +68,27 @@ export class AppController {
     };
   }
 
+  /** Weekly leave summary. Use ?date=YYYY-MM-DD (week containing that date) or ?weeksAgo=0|1|2 (this week, last week, etc.). */
   @Get('test-weekly-summary')
-  async testWeeklySummary() {
-    await this.leave.runWeeklySummary();
+  async testWeeklySummary(
+    @Query('date') date?: string,
+    @Query('weeksAgo') weeksAgoParam?: string,
+  ) {
+    const weeksAheadNum = weeksAgoParam !== undefined && weeksAgoParam !== '' ? parseInt(weeksAgoParam, 10) : undefined;
+    const options =
+      date?.trim()
+        ? { date: date.trim(), weeksAgo: undefined }
+        : weeksAheadNum !== undefined && !isNaN(weeksAheadNum) && weeksAheadNum >= 0
+          ? { date: undefined, weeksAgo: weeksAheadNum }
+          : undefined;
+    const result = await this.leave.runWeeklySummary(options);
     return {
       success: true,
-      message: 'Weekly summary test triggered successfully',
+      message: `Weekly summary sent for ${result.weekLabel} (${result.weekStart.toLocaleDateString()} – ${result.weekEnd.toLocaleDateString()})`,
+      weekStart: result.weekStart.toISOString(),
+      weekEnd: result.weekEnd.toISOString(),
+      weekLabel: result.weekLabel,
+      count: result.count,
       timestamp: new Date().toLocaleString(),
     };
   }

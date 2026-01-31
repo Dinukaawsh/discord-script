@@ -28,7 +28,6 @@
 | **Monthly leave summary** | Who was on leave this month, grouped by person with dates and total days | 30th at 6:00 PM |
 | **Squad on next week** | Which squad is on next week (from Work Calendar list) | Friday 6:00 PM |
 | **New leave requests** | Instant Discord notification when a new leave task is created | On-demand / cron |
-| **Weekly leave summary** | Who is on leave this week | Optional / test endpoint |
 
 ---
 
@@ -98,10 +97,15 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `GET` | `/test-daily-summary` | Send **today’s** leave summary to Discord. |
 | `GET` | `/test-daily-summary?date=YYYY-MM-DD` | Send leave summary for a **specific date**. |
 | `GET` | `/test-monthly-summary` | Send **this month’s** leave summary to Discord. |
-| `GET` | `/test-weekly-summary` | Send **this week’s** leave summary to Discord. |
 | `GET` | `/test-squad-notification` | Send **squad on next week** to Discord (same as Friday 6 PM job). |
 | `GET` | `/test-squad-notification?weeksAhead=2` | Send squad for **week after next** (e.g. `weeksAhead=2`). |
 | `GET` | `/check-now` | Check for **new leave requests** (last 2 hours) and send Discord notifications for each. |
+
+### Optional (no EventBridge)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/test-weekly-summary` | Send **weekly** leave summary to Discord (manual/test only; not scheduled). Use `?date=YYYY-MM-DD` or `?weeksAgo=1` for a specific week. |
 
 ### Leave & squad (read-only / preview)
 

@@ -43,7 +43,7 @@ export function getDayRange(sriLankaDate: { year: number; month: number; date: n
   return { start, end };
 }
 
-/** This week Monday 00:00:00 and Friday 23:59:59 Sri Lanka. */
+/** This week Monday 00:00:00 and Friday 23:59:59 Sri Lanka (work week). */
 export function getWeekRange(sriLankaDate: { year: number; month: number; date: number }) {
   const m = moment.tz(TZ).year(sriLankaDate.year).month(sriLankaDate.month).date(sriLankaDate.date);
   const monday = m.clone().startOf('week').add(1, 'day')
@@ -51,6 +51,20 @@ export function getWeekRange(sriLankaDate: { year: number; month: number; date: 
   const friday = m.clone().startOf('week').add(5, 'day')
     .hour(23).minute(59).second(59).millisecond(999).toDate();
   return { start: monday, end: friday };
+}
+
+/** Week range for a week offset from today. weeksAgo=0 → this week, 1 → last week, 2 → two weeks ago. */
+export function getWeekRangeByWeeksAgo(
+  sriLankaDate: { year: number; month: number; date: number },
+  weeksAgo: number,
+) {
+  const m = moment.tz(TZ).year(sriLankaDate.year).month(sriLankaDate.month).date(sriLankaDate.date);
+  const then = m.clone().subtract(weeksAgo, 'week');
+  return getWeekRange({
+    year: then.year(),
+    month: then.month(),
+    date: then.date(),
+  });
 }
 
 /** Next week Monday 00:00:00 to Sunday 23:59:59 Sri Lanka (for Work Calendar squad lookup). */

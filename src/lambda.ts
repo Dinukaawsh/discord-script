@@ -14,8 +14,8 @@ async function getApp(): Promise<INestApplicationContext> {
 
 /**
  * AWS Lambda handler for EventBridge.
- * Payload: { "schedule": "daily" } | { "schedule": "monthly" } | { "schedule": "squad_weekly" }.
- * squad_weekly = Friday 6 PM Sri Lanka: which squad is on next week (Work Calendar).
+ * Main schedules (3 rules): daily, monthly, squad_weekly.
+ * Weekly leave summary: code supported but no EventBridge rule; use GET /test-weekly-summary if needed.
  */
 export async function handler(event: any) {
   const schedule = event?.schedule ?? event?.detail?.schedule ?? event?.scheduleType;
@@ -26,6 +26,16 @@ export async function handler(event: any) {
     console.log('📅 Lambda: Running squad-on-next-week notification...');
     const result = await leaveService.runSquadNotification();
     return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: 'squad_weekly', ...result }) };
+  }
+
+  if (schedule === 'weekly') {
+    const weeksAgo = event?.weeksAgo ?? event?.detail?.weeksAgo;
+    const options = weeksAgo !== undefined && Number.isInteger(Number(weeksAgo)) && Number(weeksAgo) >= 0
+      ? { weeksAgo: Number(weeksAgo) }
+      : undefined;
+    console.log('📅 Lambda: Running weekly leave summary...', options ? `(weeksAgo=${weeksAgo})` : '(this week)');
+    const result = await leaveService.runWeeklySummary(options);
+    return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: 'weekly', ...result }) };
   }
 
   if (schedule === 'monthly') {

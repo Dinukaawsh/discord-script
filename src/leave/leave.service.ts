@@ -8,6 +8,7 @@ import {
   getMonthRange,
   getDayRange,
   getWeekRange,
+  getWeekRangeByWeeksAgo,
   getNextWeekRange,
   getWeekRangeByOffset,
   getPersonNameFromTask,
@@ -64,15 +65,41 @@ export class LeaveService {
     };
   }
 
-  async runWeeklySummary(): Promise<{ count: number }> {
+  /** Weekly leave summary. Pass date (YYYY-MM-DD) for week containing that date, or weeksAgo (0=this week, 1=last week). */
+  async runWeeklySummary(options?: { date?: string | null; weeksAgo?: number }): Promise<{ count: number; weekStart: Date; weekEnd: Date; weekLabel: string }> {
     if (!this.clickup.isConfigured()) throw new Error('ClickUp API token not configured');
     if (!this.discord.isConfigured()) throw new Error('Discord webhook URL not configured');
-    const sriLankaDate = getSriLankaDate();
-    const { start: weekStart, end: weekEnd } = getWeekRange(sriLankaDate);
+
+    let weekStart: Date;
+    let weekEnd: Date;
+    let weekLabel: string;
+
+    if (options?.date) {
+      const parsed = parseDateInSriLanka(options.date);
+      if (!parsed.isValid()) throw new Error('Invalid date format. Use YYYY-MM-DD');
+      const sriLankaDate = { year: parsed.year(), month: parsed.month(), date: parsed.date() };
+      const range = getWeekRange(sriLankaDate);
+      weekStart = range.start;
+      weekEnd = range.end;
+      weekLabel = `week of ${options.date}`;
+    } else if (options?.weeksAgo !== undefined && options.weeksAgo >= 0) {
+      const sriLankaDate = getSriLankaDate();
+      const range = getWeekRangeByWeeksAgo(sriLankaDate, options.weeksAgo);
+      weekStart = range.start;
+      weekEnd = range.end;
+      weekLabel = options.weeksAgo === 0 ? 'this week' : options.weeksAgo === 1 ? 'last week' : `${options.weeksAgo} weeks ago`;
+    } else {
+      const sriLankaDate = getSriLankaDate();
+      const range = getWeekRange(sriLankaDate);
+      weekStart = range.start;
+      weekEnd = range.end;
+      weekLabel = 'this week';
+    }
+
     const tasks = await this.clickup.getTasksWithParams({ order_by: 'created', reverse: true, limit: 100 });
     const filtered = this.clickup.filterTasksByDateRange(tasks, weekStart, weekEnd);
     await this.discord.sendWeeklySummary(filtered, weekStart, weekEnd);
-    return { count: filtered.length };
+    return { count: filtered.length, weekStart, weekEnd, weekLabel };
   }
 
   async runDailySummary(targetDate?: string | null): Promise<{ count: number }> {
