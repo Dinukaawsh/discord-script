@@ -102,7 +102,7 @@ export class LeaveService {
     return { count: filtered.length, weekStart, weekEnd, weekLabel };
   }
 
-  async runDailySummary(targetDate?: string | null): Promise<{ count: number }> {
+  async runDailySummary(targetDate?: string | null): Promise<{ count: number; skipped?: boolean; reason?: string }> {
     if (!this.clickup.isConfigured()) throw new Error('ClickUp API token not configured');
     if (!this.discord.isConfigured()) throw new Error('Discord webhook URL not configured');
 
@@ -120,11 +120,14 @@ export class LeaveService {
     const { start, end } = getDayRange(sriLankaDate);
     const tasks = await this.clickup.getTasks();
     const filtered = this.clickup.filterTasksByDateRange(tasks, start, end);
+    if (filtered.length === 0) {
+      return { count: 0, skipped: true, reason: 'No one is on leave — notification skipped' };
+    }
     await this.discord.sendDailySummary(filtered, targetDate || null, dateLabel);
-    return { count: filtered.length };
+    return { count: filtered.length, skipped: false };
   }
 
-  async runMonthlySummary(): Promise<{ count: number }> {
+  async runMonthlySummary(): Promise<{ count: number; skipped?: boolean; reason?: string }> {
     if (!this.clickup.isConfigured()) throw new Error('ClickUp API token not configured');
     if (!this.discord.isConfigured()) throw new Error('Discord webhook URL not configured');
 
@@ -133,12 +136,15 @@ export class LeaveService {
     const currentMonthName = getSriLankaTime().format('MMMM');
     const tasks = await this.clickup.getTasks();
     const filtered = this.clickup.filterTasksByMonth(tasks, monthStart, monthEnd);
+    if (filtered.length === 0) {
+      return { count: 0, skipped: true, reason: `No leave requests in ${currentMonthName} — notification skipped` };
+    }
     await this.discord.sendMonthlySummary(filtered, monthStart, monthEnd, currentMonthName);
-    return { count: filtered.length };
+    return { count: filtered.length, skipped: false };
   }
 
   /** Friday 6 PM: send Discord with squad on a future week (from Work Calendar list). weeksAhead=1 = next week, 2 = week after next. */
-  async runSquadNotification(weeksAhead: number = 1): Promise<{ count: number; squads: string[]; weekLabel: string; weeksAhead: number }> {
+  async runSquadNotification(weeksAhead: number = 1): Promise<{ count: number; squads: string[]; weekLabel: string; weeksAhead: number; skipped?: boolean; reason?: string }> {
     if (!this.clickup.isConfigured()) throw new Error('ClickUp API token not configured');
     if (!this.discord.isConfigured()) throw new Error('Discord webhook URL not configured');
     const workCalendarListId = this.clickup.getWorkCalendarListId();
@@ -148,8 +154,11 @@ export class LeaveService {
     const inRange = this.clickup.filterTasksByDateRange(tasks, weekStart, weekEnd);
     const squads = inRange.map((t) => (t.name || '').trim()).filter(Boolean);
     const weekLabel = `${weekStart.toLocaleDateString()} – ${weekEnd.toLocaleDateString()}`;
+    if (squads.length === 0) {
+      return { count: 0, squads: [], weekLabel, weeksAhead, skipped: true, reason: 'No squad assigned for next week — notification skipped' };
+    }
     await this.discord.sendSquadOnNextWeekNotification(squads, weekStart, weekEnd);
-    return { count: squads.length, squads, weekLabel, weeksAhead };
+    return { count: squads.length, squads, weekLabel, weeksAhead, skipped: false };
   }
 
   async getEmployeesOnLeave(dateStr: string): Promise<{
