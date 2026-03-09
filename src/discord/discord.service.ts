@@ -9,6 +9,8 @@ import {
 
 const DISCORD_FIELD_VALUE_LIMIT = 1024;
 const MAX_CHUNK_LEN = DISCORD_FIELD_VALUE_LIMIT - 4;
+const DISCORD_MAX_RETRIES = 5;
+const DISCORD_BASE_RETRY_MS = 1000;
 
 @Injectable()
 export class DiscordService {
@@ -66,7 +68,7 @@ export class DiscordService {
         inline: false,
       });
     }
-    await axios.post(this.webhookUrl, {
+    await this.postWebhook({
       embeds: [embed],
       username: 'Twist Digital Bot',
     });
@@ -139,7 +141,7 @@ export class DiscordService {
         inline: false,
       });
     }
-    await axios.post(this.webhookUrl, {
+    await this.postWebhook({
       embeds: [embed],
       username: 'Twist Digital Bot',
     });
@@ -179,7 +181,7 @@ export class DiscordService {
       if (fieldValue) embed.fields.push({ name: `📋 ${field.name}`, value: fieldValue, inline: true });
     }
     if (task?.url) embed.fields.push({ name: '🔗 ClickUp Link', value: `[View Full Request](${task.url})`, inline: false });
-    await axios.post(this.webhookUrl, { embeds: [embed], username: 'Twist Digital Bot' });
+    await this.postWebhook({ embeds: [embed], username: 'Twist Digital Bot' });
   }
 
   /** Friday 6 PM: which squad is on next week (from Work Calendar). */
@@ -205,7 +207,7 @@ export class DiscordService {
       timestamp: new Date().toISOString(),
       footer: { text: 'Twist Digital • Work Calendar' },
     };
-    await axios.post(this.webhookUrl, {
+    await this.postWebhook({
       embeds: [embed],
       username: 'Twist Digital Bot',
     });
@@ -242,7 +244,43 @@ export class DiscordService {
       ? twisterLeaveDetails.join('\n\n')
       : 'All Twisters are working this week! 🚀';
     this.addChunkedField(embed, summaryType, fullValue);
-    await axios.post(this.webhookUrl, { embeds: [embed], username: 'Twist Digital Bot' });
+    await this.postWebhook({ embeds: [embed], username: 'Twist Digital Bot' });
+  }
+
+  private async postWebhook(payload: Record<string, unknown>): Promise<void> {
+    if (!this.webhookUrl) throw new Error('Discord webhook URL not configured');
+    for (let attempt = 0; attempt <= DISCORD_MAX_RETRIES; attempt++) {
+      try {
+        await axios.post(this.webhookUrl, payload, { timeout: 15000 });
+        return;
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const shouldRetry = status === 429 || status >= 500 || !status;
+        if (!shouldRetry || attempt === DISCORD_MAX_RETRIES) throw err;
+        const delayMs = this.getRetryDelayMs(err, attempt);
+        // Avoid tight retry loops against Discord's rate limiter.
+        await this.sleep(delayMs);
+      }
+    }
+  }
+
+  private getRetryDelayMs(err: any, attempt: number): number {
+    const retryAfterHeader = err?.response?.headers?.['retry-after'];
+    const retryAfterSeconds = Number(retryAfterHeader);
+    if (!isNaN(retryAfterSeconds) && retryAfterSeconds > 0) {
+      return Math.ceil(retryAfterSeconds * 1000) + 250;
+    }
+    const retryAfterBody = Number(err?.response?.data?.retry_after);
+    if (!isNaN(retryAfterBody) && retryAfterBody > 0) {
+      return Math.ceil(retryAfterBody * 1000) + 250;
+    }
+    const backoff = DISCORD_BASE_RETRY_MS * Math.pow(2, attempt);
+    const jitter = Math.floor(Math.random() * 300);
+    return backoff + jitter;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private addChunkedField(embed: any, fieldName: string, fullValue: string): void {
