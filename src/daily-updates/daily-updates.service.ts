@@ -8,6 +8,7 @@ import {
   getSriLankaTime,
 } from '../common/timezone.util';
 import { ClickUpService } from '../clickup/clickup.service';
+import { ChannelUsersService } from '../channel-users/channel-users.service';
 
 type DailyChannelConfig = {
   key: 'tech' | 'marketing';
@@ -71,6 +72,7 @@ export class DailyUpdatesService {
   constructor(
     private readonly config: ConfigService,
     private readonly clickup: ClickUpService,
+    private readonly channelUsers: ChannelUsersService,
   ) {
     this.botToken = this.config.get<string>('DISCORD_BOT_TOKEN');
     this.stateFilePath = this.resolveStateFilePath();
@@ -78,14 +80,18 @@ export class DailyUpdatesService {
     this.leaveMapFilePath = this.resolveLeaveMapFilePath();
   }
 
-  isConfigured(): boolean {
-    const channels = this.getChannelConfigs();
-    return !!this.botToken && channels.length > 0 && channels.every((channel) => channel.expectedUserIds.length > 0);
+  async isConfigured(): Promise<boolean> {
+    const channels = await this.getChannelConfigs();
+    return (
+      !!this.botToken &&
+      channels.length > 0 &&
+      channels.every((channel) => channel.expectedUserIds.length > 0)
+    );
   }
 
   async sendMorningReminder(): Promise<{ sentTo: string[] }> {
-    this.assertConfigured();
-    const channels = this.getChannelConfigs();
+    const channels = await this.getChannelConfigs();
+    this.assertConfigured(channels);
     const reminderMessage = await this.getReminderMessage();
     const sentTo: string[] = [];
     for (const channel of channels) {
@@ -96,7 +102,8 @@ export class DailyUpdatesService {
   }
 
   async runNoonCheck(): Promise<{ date: string; results: ChannelCheckResult[] }> {
-    this.assertConfigured();
+    const channels = await this.getChannelConfigs();
+    this.assertConfigured(channels);
     const now = getSriLankaTime();
     const dateKey = now.format('YYYY-MM-DD');
     const dayStart = now.clone().hour(0).minute(0).second(0).millisecond(0);
@@ -114,7 +121,6 @@ export class DailyUpdatesService {
       .minute(59)
       .second(59)
       .millisecond(999);
-    const channels = this.getChannelConfigs();
     const onLeaveUserIds = await this.getOnLeaveDiscordUserIds(
       dayStart.toDate(),
       dayEnd.toDate(),
@@ -258,6 +264,19 @@ export class DailyUpdatesService {
   }
 
   private async loadMessageConfig(): Promise<DailyMessageConfig | null> {
+    const dbMessages = await this.channelUsers.getDailyMessages();
+    if (
+      dbMessages.reminder.length > 0 ||
+      dbMessages.missing.length > 0 ||
+      dbMessages.shame.length > 0
+    ) {
+      return {
+        reminder: dbMessages.reminder,
+        missing: dbMessages.missing,
+        shame: dbMessages.shame,
+      };
+    }
+
     if (!this.messagesFilePath) return null;
     try {
       const raw = await fs.readFile(this.messagesFilePath, 'utf8');
@@ -277,6 +296,11 @@ export class DailyUpdatesService {
   }
 
   private async loadLeaveNameMap(): Promise<Record<string, string>> {
+    const dbMap = await this.channelUsers.getLeaveMap();
+    if (Object.keys(dbMap).length > 0) {
+      return this.normalizeLeaveNameMap(dbMap);
+    }
+
     const fromEnv = this.config.get<string>('DAILY_UPDATES_LEAVE_MAP_JSON')?.trim();
     if (fromEnv) {
       try {
@@ -362,11 +386,17 @@ export class DailyUpdatesService {
     return single || null;
   }
 
-  private getChannelConfigs(): DailyChannelConfig[] {
+  private async getChannelConfigs(): Promise<DailyChannelConfig[]> {
     const techChannelId = this.config.get<string>('TECH_UPDATES_CHANNEL_ID')?.trim() || '';
     const marketingChannelId = this.config.get<string>('MARKETING_UPDATES_CHANNEL_ID')?.trim() || '';
-    const techUsers = this.parseIdList(this.config.get<string>('TECH_UPDATES_USER_IDS'));
-    const marketingUsers = this.parseIdList(this.config.get<string>('MARKETING_UPDATES_USER_IDS'));
+    const techUsers = await this.channelUsers.getUserIds(
+      'tech',
+      this.config.get<string>('TECH_UPDATES_USER_IDS'),
+    );
+    const marketingUsers = await this.channelUsers.getUserIds(
+      'marketing',
+      this.config.get<string>('MARKETING_UPDATES_USER_IDS'),
+    );
     const channels: DailyChannelConfig[] = [];
 
     if (techChannelId) {
@@ -386,15 +416,6 @@ export class DailyUpdatesService {
       });
     }
     return channels;
-  }
-
-  private parseIdList(raw: string | undefined): string[] {
-    if (!raw) return [];
-    const ids = raw
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    return Array.from(new Set(ids));
   }
 
   private async postChannelMessage(
@@ -548,6 +569,11 @@ export class DailyUpdatesService {
   }
 
   private async loadState(): Promise<DailyState> {
+    const dbState = await this.channelUsers.getDailyState();
+    if (dbState && typeof dbState === 'object') {
+      return { channelStates: dbState };
+    }
+
     try {
       const raw = await fs.readFile(this.stateFilePath, 'utf8');
       const parsed = JSON.parse(raw) as DailyState;
@@ -561,6 +587,10 @@ export class DailyUpdatesService {
   }
 
   private async saveState(state: DailyState): Promise<void> {
+    if (this.channelUsers.isEnabled()) {
+      await this.channelUsers.setDailyState(state.channelStates);
+      return;
+    }
     const dir = path.dirname(this.stateFilePath);
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(this.stateFilePath, JSON.stringify(state, null, 2), 'utf8');
@@ -576,11 +606,10 @@ export class DailyUpdatesService {
       : `${template}\n${mentions}`;
   }
 
-  private assertConfigured(): void {
+  private assertConfigured(channels: DailyChannelConfig[]): void {
     if (!this.botToken) {
       throw new Error('DISCORD_BOT_TOKEN not configured');
     }
-    const channels = this.getChannelConfigs();
     if (channels.length === 0) {
       throw new Error('No daily update channels configured');
     }

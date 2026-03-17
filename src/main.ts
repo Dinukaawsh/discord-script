@@ -32,6 +32,7 @@ async function bootstrap() {
     console.log(`💚 Health: http://localhost:${port}/health`);
     console.log(`💚 Ping: http://localhost:${port}/ping`);
     console.log(`🔐 Non-health endpoints require x-api-key header`);
+    console.log(`🛠️  Admin UI: http://localhost:${port}/admin`);
     console.log(`🧪 Test daily: http://localhost:${port}/test-daily-summary`);
     console.log(`🧪 Test monthly: http://localhost:${port}/test-monthly-summary`);
     console.log(`🧪 Test weekly: http://localhost:${port}/test-weekly-summary`);

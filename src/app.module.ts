@@ -7,6 +7,7 @@ import { DiscordModule } from './discord/discord.module';
 import { LeaveModule } from './leave/leave.module';
 import { DailyUpdatesModule } from './daily-updates/daily-updates.module';
 import { ApiKeyGuard } from './auth/api-key.guard';
+import { ChannelUsersModule } from './channel-users/channel-users.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ApiKeyGuard } from './auth/api-key.guard';
     DiscordModule,
     LeaveModule,
     DailyUpdatesModule,
+    ChannelUsersModule,
   ],
   controllers: [AppController],
   providers: [

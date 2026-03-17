@@ -67,3 +67,4 @@ tsconfig.tsbuildinfo
 
 # Data files
 data/
+config/leave-discord-map.json

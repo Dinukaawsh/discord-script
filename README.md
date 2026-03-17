@@ -84,13 +84,15 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DISCORD_BOT_TOKEN` | Yes* | Bot token used to read channel messages and post reminder/defaulter/shame messages. |
 | `TECH_UPDATES_CHANNEL_ID` | Yes* | Discord channel ID for tech daily updates. |
 | `MARKETING_UPDATES_CHANNEL_ID` | Yes* | Discord channel ID for marketing daily updates. |
-| `TECH_UPDATES_USER_IDS` | Yes* | Comma-separated Discord user IDs expected to post in tech channel. |
-| `MARKETING_UPDATES_USER_IDS` | Yes* | Comma-separated Discord user IDs expected to post in marketing channel. |
+| `TECH_UPDATES_USER_IDS` | No | Fallback comma-separated IDs for tech channel (used when MongoDB config is unavailable/empty). |
+| `MARKETING_UPDATES_USER_IDS` | No | Fallback comma-separated IDs for marketing channel (used when MongoDB config is unavailable/empty). |
+| `MONGODB_URI` | No | MongoDB connection string for admin-managed channel user IDs. |
+| `MONGODB_DB_NAME` | No | MongoDB database name (default `leave-notification`). |
 | `DAILY_UPDATES_REMINDER_MESSAGE` | No | Custom 10:00 reminder message. |
 | `DAILY_UPDATES_MISSING_MESSAGE` | No | Custom noon defaulter tag message. Use `{mentions}` placeholder. |
 | `DAILY_UPDATES_SHAME_MESSAGE` | No | Custom 3-day fun shame message. Use `{mentions}` placeholder. |
-| `DAILY_UPDATES_STATE_FILE` | No | State file path for streak tracking (default `.daily-updates-state.json`, Lambda uses `/tmp`). |
-| `DAILY_UPDATES_MESSAGES_FILE` | No | Path to JSON file with message templates (`reminder`, `missing`, `shame`). Each can be string or array; arrays are picked randomly. |
+| `DAILY_UPDATES_STATE_FILE` | No | Fallback state file path when MongoDB is not enabled. |
+| `DAILY_UPDATES_MESSAGES_FILE` | No | Fallback JSON file with message templates when MongoDB templates are empty/unavailable. |
 | `DAILY_UPDATES_MIN_CHARS` | No | Minimum non-empty message length to count as an update (default `20`). |
 | `DAILY_UPDATES_MIN_WORDS` | No | Minimum words to count as an update (default `4`). |
 | `DAILY_UPDATES_CUTOFF_HOUR` | No | Daily cutoff hour in Sri Lanka time (0-23, default `12`). |
@@ -99,8 +101,8 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DAILY_UPDATES_REACTION_EMOJI` | No | Emoji used for reactions (default `✅`). |
 | `DAILY_UPDATES_SHAME_GIF_URL` | No | Optional GIF/image URL appended to shame message. |
 | `DAILY_UPDATES_EXCLUDE_ON_LEAVE` | No | Set `true` to exclude people on leave (from ClickUp) from missing/shame checks. |
-| `DAILY_UPDATES_LEAVE_MAP_FILE` | No | Path to JSON mapping from ClickUp person name to Discord user ID. |
-| `DAILY_UPDATES_LEAVE_MAP_JSON` | No | Inline JSON mapping alternative to file (used first if valid). |
+| `DAILY_UPDATES_LEAVE_MAP_FILE` | No | Fallback JSON mapping from ClickUp name to Discord ID when MongoDB map is empty/unavailable. |
+| `DAILY_UPDATES_LEAVE_MAP_JSON` | No | Inline fallback mapping alternative (used before file if valid). |
 | `PORT` | No | Server port (default `3000`). |
 
 ---
@@ -116,6 +118,8 @@ By default the server listens on **http://localhost:3000** (or the next free por
 
 > All other endpoints require header: `x-api-key: <API_KEY>`
 
+> `GET /admin` is public so you can load the UI, but actions in that UI still require API key.
+
 ### Notifications (send to Discord)
 
 | Method | Endpoint | Description |
@@ -128,6 +132,15 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `GET` | `/check-now` | Check for **new leave requests** (last 2 hours) and send Discord notifications for each. |
 | `GET` | `/daily-updates/reminder` | Send 10:00 reminder message to tech + marketing channels. |
 | `GET` | `/daily-updates/noon-check` | Check posts before 12:00 PM, tag defaulters, and send 3-day streak fun shame tags. |
+| `GET` | `/admin` | Minimal admin UI for managing channel user IDs and manual trigger buttons. |
+| `GET` | `/admin/channel-users` | Get channel user IDs saved in MongoDB. |
+| `GET` | `/admin/db-status` | Test MongoDB connectivity/status for admin UI. |
+| `PUT` | `/admin/channel-users/:channelKey` | Save user IDs for `tech` or `marketing`. |
+| `POST` | `/admin/channel-users/seed-from-env` | Seed MongoDB user IDs from env fallback values. |
+| `PUT` | `/admin/daily-config/messages` | Save reminder/missing/shame templates in MongoDB. |
+| `PUT` | `/admin/daily-config/leave-map` | Save ClickUp-name to Discord-ID map in MongoDB. |
+| `GET` | `/admin/daily-config/state` | View stored daily streak/check state in MongoDB. |
+| `POST` | `/admin/daily-config/state/reset` | Reset stored daily streak/check state in MongoDB. |
 
 ### Optional (no EventBridge)
 
