@@ -38,6 +38,15 @@ type ChannelCheckResult = {
   reason?: string;
 };
 
+type ValidUpdateMessage = {
+  userId: string;
+  messageId: string;
+};
+
+type PostMessageOptions = {
+  imageUrl?: string;
+};
+
 const DEFAULT_REMINDER_MESSAGE =
   'Good morning team! Please add your daily update in this channel before 12:00 PM without fail. Thank you!';
 const DEFAULT_MISSING_MESSAGE =
@@ -113,8 +122,19 @@ export class DailyUpdatesService {
         dayStart.toDate(),
         cutoffTime.toDate(),
       );
-      const postedSet = new Set(postedUserIds);
+      const postedSet = new Set(postedUserIds.map((item) => item.userId));
       const missingUserIds = channel.expectedUserIds.filter((id) => !postedSet.has(id));
+
+      const shouldReact = String(this.config.get<string>('DAILY_UPDATES_ADD_REACTION') || '')
+        .trim()
+        .toLowerCase() === 'true';
+      if (shouldReact) {
+        const reactionEmoji = this.config.get<string>('DAILY_UPDATES_REACTION_EMOJI')?.trim() || '✅';
+        for (const posted of postedUserIds) {
+          if (!channel.expectedUserIds.includes(posted.userId)) continue;
+          await this.addReactionToMessage(channel.channelId, posted.messageId, reactionEmoji);
+        }
+      }
 
       for (const userId of channel.expectedUserIds) {
         const current = channelState.streaks[userId] || 0;
@@ -135,9 +155,11 @@ export class DailyUpdatesService {
       if (shameUserIds.length > 0) {
         const mentions = this.toMentions(shameUserIds);
         const shameTemplate = await this.getShameMessage();
+        const shameGifUrl = this.config.get<string>('DAILY_UPDATES_SHAME_GIF_URL')?.trim();
         await this.postChannelMessage(
           channel.channelId,
           this.renderTemplate(shameTemplate, mentions),
+          { imageUrl: shameGifUrl },
         );
       }
 
@@ -252,11 +274,20 @@ export class DailyUpdatesService {
     return Array.from(new Set(ids));
   }
 
-  private async postChannelMessage(channelId: string, content: string): Promise<void> {
+  private async postChannelMessage(
+    channelId: string,
+    content: string,
+    options?: PostMessageOptions,
+  ): Promise<void> {
     if (!this.botToken) throw new Error('DISCORD_BOT_TOKEN not configured');
+    const payload: any = { content };
+    const imageUrl = options?.imageUrl?.trim();
+    if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
+      payload.embeds = [{ image: { url: imageUrl } }];
+    }
     await axios.post(
       `${this.discordApiBase}/channels/${channelId}/messages`,
-      { content },
+      payload,
       {
         headers: {
           Authorization: `Bot ${this.botToken}`,
@@ -267,9 +298,13 @@ export class DailyUpdatesService {
     );
   }
 
-  private async getPostedUserIds(channelId: string, start: Date, end: Date): Promise<string[]> {
+  private async getPostedUserIds(
+    channelId: string,
+    start: Date,
+    end: Date,
+  ): Promise<ValidUpdateMessage[]> {
     if (!this.botToken) throw new Error('DISCORD_BOT_TOKEN not configured');
-    const posted = new Set<string>();
+    const postedByUser = new Map<string, string>();
     let beforeMessageId: string | undefined;
 
     for (let i = 0; i < 10; i++) {
@@ -302,7 +337,10 @@ export class DailyUpdatesService {
           message?.author?.id &&
           this.isMeaningfulUpdateMessage(message)
         ) {
-          posted.add(String(message.author.id));
+          const userId = String(message.author.id);
+          if (!postedByUser.has(userId) && message?.id) {
+            postedByUser.set(userId, String(message.id));
+          }
         }
       }
 
@@ -311,7 +349,34 @@ export class DailyUpdatesService {
       if (!beforeMessageId) break;
     }
 
-    return Array.from(posted);
+    return Array.from(postedByUser.entries()).map(([userId, messageId]) => ({
+      userId,
+      messageId,
+    }));
+  }
+
+  private async addReactionToMessage(
+    channelId: string,
+    messageId: string,
+    emoji: string,
+  ): Promise<void> {
+    if (!this.botToken) return;
+    const encodedEmoji = encodeURIComponent(emoji);
+    try {
+      await axios.put(
+        `${this.discordApiBase}/channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}/@me`,
+        null,
+        {
+          headers: {
+            Authorization: `Bot ${this.botToken}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        },
+      );
+    } catch {
+      // Best-effort reaction: do not fail the whole check.
+    }
   }
 
   private isMeaningfulUpdateMessage(message: any): boolean {

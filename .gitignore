@@ -64,3 +64,6 @@ Thumbs.db
 *.tmp
 *.temp
 tsconfig.tsbuildinfo
+
+# Data files
+data/
