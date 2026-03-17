@@ -3,7 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { getSriLankaTime } from '../common/timezone.util';
+import {
+  getPersonNameFromTask,
+  getSriLankaTime,
+} from '../common/timezone.util';
+import { ClickUpService } from '../clickup/clickup.service';
 
 type DailyChannelConfig = {
   key: 'tech' | 'marketing';
@@ -32,6 +36,8 @@ type ChannelCheckResult = {
   channelName: string;
   expectedCount: number;
   postedCount: number;
+  excludedOnLeaveCount: number;
+  excludedOnLeaveUserIds: string[];
   missingUserIds: string[];
   shameUserIds: string[];
   skipped: boolean;
@@ -60,11 +66,16 @@ export class DailyUpdatesService {
   private readonly botToken: string | undefined;
   private readonly stateFilePath: string;
   private readonly messagesFilePath: string | undefined;
+  private readonly leaveMapFilePath: string | undefined;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly clickup: ClickUpService,
+  ) {
     this.botToken = this.config.get<string>('DISCORD_BOT_TOKEN');
     this.stateFilePath = this.resolveStateFilePath();
     this.messagesFilePath = this.resolveMessagesFilePath();
+    this.leaveMapFilePath = this.resolveLeaveMapFilePath();
   }
 
   isConfigured(): boolean {
@@ -97,18 +108,36 @@ export class DailyUpdatesService {
       .minute(cutoffMinute)
       .second(0)
       .millisecond(0);
+    const dayEnd = now
+      .clone()
+      .hour(23)
+      .minute(59)
+      .second(59)
+      .millisecond(999);
     const channels = this.getChannelConfigs();
+    const onLeaveUserIds = await this.getOnLeaveDiscordUserIds(
+      dayStart.toDate(),
+      dayEnd.toDate(),
+    );
     const state = await this.loadState();
     const results: ChannelCheckResult[] = [];
 
     for (const channel of channels) {
       const channelState = this.ensureChannelState(state, channel.channelId);
+      const excludedOnLeaveUserIds = channel.expectedUserIds.filter((id) =>
+        onLeaveUserIds.has(id),
+      );
+      const effectiveExpectedUserIds = channel.expectedUserIds.filter(
+        (id) => !onLeaveUserIds.has(id),
+      );
       if (channelState.lastCheckedDate === dateKey) {
         results.push({
           channelId: channel.channelId,
           channelName: channel.name,
-          expectedCount: channel.expectedUserIds.length,
+          expectedCount: effectiveExpectedUserIds.length,
           postedCount: 0,
+          excludedOnLeaveCount: excludedOnLeaveUserIds.length,
+          excludedOnLeaveUserIds,
           missingUserIds: [],
           shameUserIds: [],
           skipped: true,
@@ -123,7 +152,9 @@ export class DailyUpdatesService {
         cutoffTime.toDate(),
       );
       const postedSet = new Set(postedUserIds.map((item) => item.userId));
-      const missingUserIds = channel.expectedUserIds.filter((id) => !postedSet.has(id));
+      const missingUserIds = effectiveExpectedUserIds.filter(
+        (id) => !postedSet.has(id),
+      );
 
       const shouldReact = String(this.config.get<string>('DAILY_UPDATES_ADD_REACTION') || '')
         .trim()
@@ -131,12 +162,12 @@ export class DailyUpdatesService {
       if (shouldReact) {
         const reactionEmoji = this.config.get<string>('DAILY_UPDATES_REACTION_EMOJI')?.trim() || '✅';
         for (const posted of postedUserIds) {
-          if (!channel.expectedUserIds.includes(posted.userId)) continue;
+          if (!effectiveExpectedUserIds.includes(posted.userId)) continue;
           await this.addReactionToMessage(channel.channelId, posted.messageId, reactionEmoji);
         }
       }
 
-      for (const userId of channel.expectedUserIds) {
+      for (const userId of effectiveExpectedUserIds) {
         const current = channelState.streaks[userId] || 0;
         channelState.streaks[userId] = postedSet.has(userId) ? 0 : current + 1;
       }
@@ -166,8 +197,10 @@ export class DailyUpdatesService {
       results.push({
         channelId: channel.channelId,
         channelName: channel.name,
-        expectedCount: channel.expectedUserIds.length,
-        postedCount: postedSet.size,
+        expectedCount: effectiveExpectedUserIds.length,
+        postedCount: effectiveExpectedUserIds.filter((id) => postedSet.has(id)).length,
+        excludedOnLeaveCount: excludedOnLeaveUserIds.length,
+        excludedOnLeaveUserIds,
         missingUserIds,
         shameUserIds,
         skipped: false,
@@ -189,6 +222,15 @@ export class DailyUpdatesService {
 
   private resolveMessagesFilePath(): string | undefined {
     const configuredPath = this.config.get<string>('DAILY_UPDATES_MESSAGES_FILE')?.trim();
+    if (!configuredPath) return undefined;
+    if (path.isAbsolute(configuredPath)) return configuredPath;
+    return path.resolve(process.cwd(), configuredPath);
+  }
+
+  private resolveLeaveMapFilePath(): string | undefined {
+    const configuredPath = this.config
+      .get<string>('DAILY_UPDATES_LEAVE_MAP_FILE')
+      ?.trim();
     if (!configuredPath) return undefined;
     if (path.isAbsolute(configuredPath)) return configuredPath;
     return path.resolve(process.cwd(), configuredPath);
@@ -224,6 +266,87 @@ export class DailyUpdatesService {
       return parsed;
     } catch {
       return null;
+    }
+  }
+
+  private normalizeName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private async loadLeaveNameMap(): Promise<Record<string, string>> {
+    const fromEnv = this.config.get<string>('DAILY_UPDATES_LEAVE_MAP_JSON')?.trim();
+    if (fromEnv) {
+      try {
+        const parsed = JSON.parse(fromEnv) as Record<string, string>;
+        return this.normalizeLeaveNameMap(parsed);
+      } catch {
+        // Ignore invalid JSON and fallback to file.
+      }
+    }
+
+    if (this.leaveMapFilePath) {
+      try {
+        const raw = await fs.readFile(this.leaveMapFilePath, 'utf8');
+        const parsed = JSON.parse(raw) as Record<string, string>;
+        return this.normalizeLeaveNameMap(parsed);
+      } catch {
+        return {};
+      }
+    }
+
+    return {};
+  }
+
+  private normalizeLeaveNameMap(
+    map: Record<string, string> | null | undefined,
+  ): Record<string, string> {
+    if (!map || typeof map !== 'object') return {};
+    const normalized: Record<string, string> = {};
+    for (const [name, discordUserId] of Object.entries(map)) {
+      const normalizedName = this.normalizeName(String(name || ''));
+      const userId = String(discordUserId || '').trim();
+      if (!normalizedName || !userId) continue;
+      normalized[normalizedName] = userId;
+    }
+    return normalized;
+  }
+
+  private async getOnLeaveDiscordUserIds(
+    dayStart: Date,
+    dayEnd: Date,
+  ): Promise<Set<string>> {
+    const excludeOnLeave =
+      String(this.config.get<string>('DAILY_UPDATES_EXCLUDE_ON_LEAVE') || 'true')
+        .trim()
+        .toLowerCase() !== 'false';
+    if (!excludeOnLeave) return new Set<string>();
+    if (!this.clickup.isConfigured()) return new Set<string>();
+
+    const nameMap = await this.loadLeaveNameMap();
+    if (Object.keys(nameMap).length === 0) return new Set<string>();
+
+    try {
+      const tasks = await this.clickup.getTasks();
+      const onLeaveTasks = this.clickup.filterTasksByDateRange(
+        tasks,
+        dayStart,
+        dayEnd,
+      );
+      const userIds = new Set<string>();
+      for (const task of onLeaveTasks) {
+        const personName = this.normalizeName(getPersonNameFromTask(task));
+        const mappedUserId = nameMap[personName];
+        if (mappedUserId) {
+          userIds.add(mappedUserId);
+        }
+      }
+      return userIds;
+    } catch {
+      // Fail-open: if ClickUp lookup fails, continue without leave exclusions.
+      return new Set<string>();
     }
   }
 

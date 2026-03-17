@@ -98,6 +98,9 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DAILY_UPDATES_ADD_REACTION` | No | Set `true` to add reaction on each valid update message found during check. |
 | `DAILY_UPDATES_REACTION_EMOJI` | No | Emoji used for reactions (default `✅`). |
 | `DAILY_UPDATES_SHAME_GIF_URL` | No | Optional GIF/image URL appended to shame message. |
+| `DAILY_UPDATES_EXCLUDE_ON_LEAVE` | No | Set `true` to exclude people on leave (from ClickUp) from missing/shame checks. |
+| `DAILY_UPDATES_LEAVE_MAP_FILE` | No | Path to JSON mapping from ClickUp person name to Discord user ID. |
+| `DAILY_UPDATES_LEAVE_MAP_JSON` | No | Inline JSON mapping alternative to file (used first if valid). |
 | `PORT` | No | Server port (default `3000`). |
 
 ---
