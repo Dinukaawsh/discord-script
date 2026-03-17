@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { ClickUpService } from './clickup/clickup.service';
 import { LeaveService } from './leave/leave.service';
 import { getSriLankaDate, getSriLankaTime, getWeekRangeByOffset } from './common/timezone.util';
+import { DailyUpdatesService } from './daily-updates/daily-updates.service';
+import { Public } from './auth/public.decorator';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const moment: any = require('moment-timezone');
@@ -13,13 +15,16 @@ export class AppController {
     private readonly leave: LeaveService,
     private readonly clickup: ClickUpService,
     private readonly config: ConfigService,
+    private readonly dailyUpdates: DailyUpdatesService,
   ) {}
 
+  @Public()
   @Get('health')
   health() {
     return { status: 'OK', timestamp: new Date().toISOString() };
   }
 
+  @Public()
   @Get('ping')
   ping() {
     return {
@@ -242,6 +247,28 @@ export class AppController {
       search: searchTerm,
       message: total > 0 ? `Found ${total} match(es) for "${searchTerm}"` : `No list, folder, or space named like "${searchTerm}"`,
       ...result,
+    };
+  }
+
+  @Get('daily-updates/reminder')
+  async triggerDailyUpdatesReminder() {
+    const result = await this.dailyUpdates.sendMorningReminder();
+    return {
+      success: true,
+      message: 'Daily update reminder sent to configured channels.',
+      ...result,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('daily-updates/noon-check')
+  async triggerDailyUpdatesNoonCheck() {
+    const result = await this.dailyUpdates.runNoonCheck();
+    return {
+      success: true,
+      message: 'Daily update noon check completed.',
+      ...result,
+      timestamp: new Date().toISOString(),
     };
   }
 }

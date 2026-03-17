@@ -25,6 +25,9 @@
 | Feature | Description | When (Sri Lanka) |
 |--------|-------------|-------------------|
 | **Daily leave summary** | Who is on leave today | 10:00 AM daily |
+| **Daily updates reminder (2 channels)** | Reminder message in Tech + Marketing channels | 10:00 AM daily |
+| **Daily updates defaulter check** | At noon, tags users who did not post daily update | 12:00 PM daily |
+| **3-day streak fun shame** | Tags users missing updates 3 days continuously | 12:00 PM daily |
 | **Monthly leave summary** | Who was on leave this month, grouped by person with dates and total days | 30th at 6:00 PM |
 | **Squad on next week** | Which squad is on next week (from Work Calendar list) | Friday 6:00 PM |
 | **New leave requests** | Instant Discord notification when a new leave task is created | On-demand / cron |
@@ -77,6 +80,21 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `LEAVE_LIST_ID` | Yes | ClickUp list ID that contains leave request tasks. |
 | `CLICKUP_WORKSPACE_ID` | Yes* | ClickUp workspace (team) ID; needed for `find-lists` and `find-by-name`. |
 | `WORK_CALENDAR_LIST_ID` | Yes* | ClickUp list ID for “Work Calendar” (squad-on-next-week). Required for `/squad-next-week` and `/test-squad-notification`. |
+| `API_KEY` | Yes | Required API key for all non-health HTTP endpoints. Send as `x-api-key` header. |
+| `DISCORD_BOT_TOKEN` | Yes* | Bot token used to read channel messages and post reminder/defaulter/shame messages. |
+| `TECH_UPDATES_CHANNEL_ID` | Yes* | Discord channel ID for tech daily updates. |
+| `MARKETING_UPDATES_CHANNEL_ID` | Yes* | Discord channel ID for marketing daily updates. |
+| `TECH_UPDATES_USER_IDS` | Yes* | Comma-separated Discord user IDs expected to post in tech channel. |
+| `MARKETING_UPDATES_USER_IDS` | Yes* | Comma-separated Discord user IDs expected to post in marketing channel. |
+| `DAILY_UPDATES_REMINDER_MESSAGE` | No | Custom 10:00 reminder message. |
+| `DAILY_UPDATES_MISSING_MESSAGE` | No | Custom noon defaulter tag message. Use `{mentions}` placeholder. |
+| `DAILY_UPDATES_SHAME_MESSAGE` | No | Custom 3-day fun shame message. Use `{mentions}` placeholder. |
+| `DAILY_UPDATES_STATE_FILE` | No | State file path for streak tracking (default `.daily-updates-state.json`, Lambda uses `/tmp`). |
+| `DAILY_UPDATES_MESSAGES_FILE` | No | Path to JSON file with message templates (`reminder`, `missing`, `shame`). Each can be string or array; arrays are picked randomly. |
+| `DAILY_UPDATES_MIN_CHARS` | No | Minimum non-empty message length to count as an update (default `20`). |
+| `DAILY_UPDATES_MIN_WORDS` | No | Minimum words to count as an update (default `4`). |
+| `DAILY_UPDATES_CUTOFF_HOUR` | No | Daily cutoff hour in Sri Lanka time (0-23, default `12`). |
+| `DAILY_UPDATES_CUTOFF_MINUTE` | No | Daily cutoff minute in Sri Lanka time (0-59, default `0`). |
 | `PORT` | No | Server port (default `3000`). |
 
 ---
@@ -90,6 +108,8 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `GET` | `/health` | Health check. Returns `{ status: "OK", timestamp }`. |
 | `GET` | `/ping` | Liveness ping. Returns `{ status: "AWAKE", message, timestamp }`. |
 
+> All other endpoints require header: `x-api-key: <API_KEY>`
+
 ### Notifications (send to Discord)
 
 | Method | Endpoint | Description |
@@ -100,6 +120,8 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `GET` | `/test-squad-notification` | Send **squad on next week** to Discord (same as Friday 6 PM job). |
 | `GET` | `/test-squad-notification?weeksAhead=2` | Send squad for **week after next** (e.g. `weeksAhead=2`). |
 | `GET` | `/check-now` | Check for **new leave requests** (last 2 hours) and send Discord notifications for each. |
+| `GET` | `/daily-updates/reminder` | Send 10:00 reminder message to tech + marketing channels. |
+| `GET` | `/daily-updates/noon-check` | Check posts before 12:00 PM, tag defaulters, and send 3-day streak fun shame tags. |
 
 ### Optional (no EventBridge)
 
@@ -133,6 +155,8 @@ When deployed as **AWS Lambda**, use **EventBridge** to trigger the handler with
 | When (Sri Lanka) | Cron (UTC) | Payload |
 |------------------|------------|---------|
 | 10:00 AM daily (leave summary) | `cron(30 4 * * ? *)` | `{"schedule":"daily"}` |
+| 10:00 AM daily (updates reminder) | `cron(30 4 * * ? *)` | `{"schedule":"daily_updates_reminder"}` |
+| 12:00 PM daily (updates noon check) | `cron(30 6 * * ? *)` | `{"schedule":"daily_updates_noon_check"}` |
 | 30th at 6:00 PM (monthly summary) | `cron(30 12 30 * ? *)` | `{"schedule":"monthly"}` |
 | Friday 6:00 PM (squad on next week) | `cron(30 12 ? * FRI *)` | `{"schedule":"squad_weekly"}` |
 

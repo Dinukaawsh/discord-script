@@ -2,6 +2,7 @@ import { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { LeaveService } from './leave/leave.service';
+import { DailyUpdatesService } from './daily-updates/daily-updates.service';
 
 let app: INestApplicationContext;
 
@@ -21,6 +22,19 @@ export async function handler(event: any) {
   const schedule = event?.schedule ?? event?.detail?.schedule ?? event?.scheduleType;
   const nestApp = await getApp();
   const leaveService = nestApp.get(LeaveService);
+  const dailyUpdatesService = nestApp.get(DailyUpdatesService);
+
+  if (schedule === 'daily_updates_reminder') {
+    console.log('🕙 Lambda: Sending daily updates reminder...');
+    const result = await dailyUpdatesService.sendMorningReminder();
+    return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: 'daily_updates_reminder', ...result }) };
+  }
+
+  if (schedule === 'daily_updates_noon_check') {
+    console.log('🕛 Lambda: Running daily updates noon check...');
+    const result = await dailyUpdatesService.runNoonCheck();
+    return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: 'daily_updates_noon_check', ...result }) };
+  }
 
   if (schedule === 'squad_weekly') {
     console.log('📅 Lambda: Running squad-on-next-week notification...');
