@@ -95,6 +95,7 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DAILY_UPDATES_MESSAGES_FILE` | No | Fallback JSON file with message templates when MongoDB templates are empty/unavailable. |
 | `DAILY_UPDATES_MIN_CHARS` | No | Minimum non-empty message length to count as an update (default `20`). |
 | `DAILY_UPDATES_MIN_WORDS` | No | Minimum words to count as an update (default `4`). |
+| `DAILY_UPDATES_STRICT_MESSAGE_VALIDATION` | No | Set `true` to enforce strict text rules (`MIN_CHARS`/`MIN_WORDS` + alphanumeric check). Default is lenient update detection. |
 | `DAILY_UPDATES_CUTOFF_HOUR` | No | Daily cutoff hour in Sri Lanka time (0-23, default `12`). |
 | `DAILY_UPDATES_CUTOFF_MINUTE` | No | Daily cutoff minute in Sri Lanka time (0-59, default `0`). |
 | `DAILY_UPDATES_ADD_REACTION` | No | Set `true` to add reaction on each valid update message found during check. |

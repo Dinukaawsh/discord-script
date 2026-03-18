@@ -526,9 +526,25 @@ export class DailyUpdatesService {
   private isMeaningfulUpdateMessage(message: any): boolean {
     const rawContent = String(message?.content || '');
     const content = rawContent.replace(/\s+/g, ' ').trim();
-    if (!content) return false;
+    const hasAttachments =
+      Array.isArray(message?.attachments) && message.attachments.length > 0;
+    const hasEmbeds = Array.isArray(message?.embeds) && message.embeds.length > 0;
+    if (!content && !hasAttachments && !hasEmbeds) return false;
 
-    // Reject messages that are only emoji/symbols/markdown punctuation.
+    const strictValidationEnabled =
+      String(
+        this.config.get<string>('DAILY_UPDATES_STRICT_MESSAGE_VALIDATION') ||
+          'false',
+      )
+        .trim()
+        .toLowerCase() === 'true';
+
+    // Default mode is lenient because update channels are expected to contain
+    // only daily updates; any non-empty text/attachment/embed counts.
+    if (!strictValidationEnabled) return true;
+
+    // Strict mode keeps previous filtering for text-heavy updates.
+    if (!content) return false;
     const hasAlphaNum = /[A-Za-z0-9]/.test(content);
     if (!hasAlphaNum) return false;
 
