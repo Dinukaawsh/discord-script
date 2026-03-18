@@ -64,3 +64,7 @@ Thumbs.db
 *.tmp
 *.temp
 tsconfig.tsbuildinfo
+
+# Data files
+data/
+config/leave-discord-map.json

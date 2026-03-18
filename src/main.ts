@@ -30,6 +30,9 @@ async function bootstrap() {
     }
     console.log(`🚀 Server running on http://localhost:${port}`);
     console.log(`💚 Health: http://localhost:${port}/health`);
+    console.log(`💚 Ping: http://localhost:${port}/ping`);
+    console.log(`🔐 Non-health endpoints require x-api-key header`);
+    console.log(`🛠️  Admin UI: http://localhost:${port}/admin`);
     console.log(`🧪 Test daily: http://localhost:${port}/test-daily-summary`);
     console.log(`🧪 Test monthly: http://localhost:${port}/test-monthly-summary`);
     console.log(`🧪 Test weekly: http://localhost:${port}/test-weekly-summary`);
@@ -40,6 +43,8 @@ async function bootstrap() {
     console.log(`🔍 Find by name (e.g. work calendar): http://localhost:${port}/find-by-name?q=work%20calendar`);
     console.log(`📅 Squad on next week (preview): http://localhost:${port}/squad-next-week`);
     console.log(`📅 Test squad notification (Friday 6 PM): http://localhost:${port}/test-squad-notification`);
+    console.log(`🕙 Daily updates reminder: http://localhost:${port}/daily-updates/reminder`);
+    console.log(`🕛 Daily updates noon check: http://localhost:${port}/daily-updates/noon-check`);
   }
 }
 

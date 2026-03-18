@@ -1,0 +1,15 @@
+{
+  "reminder": [
+    "@everyone Good morning Twisters! Please drop your daily update before 12:00 PM. Future you will thank you.",
+    "@everyone Rise and update! Add your daily update before 12:00 PM so the team stays in sync."
+  ],
+  "missing": [
+    "Friendly ping {mentions} - we could not find your update before noon. Please add it now.",
+    "Update radar missed a signal from {mentions}. Please post your daily update now."
+  ],
+  "shame": [
+    "Fun shame mode activated {mentions} - 3-day no-update streak unlocked. Patch notes tomorrow?",
+    "Breaking news {mentions}: another 3-day update drought. Please return to regular broadcasting.",
+    "Daily update police are here {mentions} - 3 misses in a row. Redemption arc starts now."
+  ]
+}
