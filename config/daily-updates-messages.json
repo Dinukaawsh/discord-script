@@ -1,15 +1,23 @@
 {
   "reminder": [
-    "@everyone Good morning Twisters! Please drop your daily update before 12:00 PM. Future you will thank you.",
-    "@everyone Rise and update! Add your daily update before 12:00 PM so the team stays in sync."
+    "@everyone Good morning Twisters! Drop your daily update before 12:00 PM. Your future self (and your team) will thank you.",
+    "@everyone Rise and update time! Please post your daily update before 12:00 PM so we stay in sync.",
+    "@everyone Daily update checkpoint: share what you did, what you are doing, and blockers before 12:00 PM.",
+    "@everyone Quick reminder from mission control: daily updates are due before 12:00 PM in this channel.",
+    "@everyone Tiny effort, big clarity. Please post your daily update before 12:00 PM. Let's go!"
   ],
   "missing": [
     "Friendly ping {mentions} - we could not find your update before noon. Please add it now.",
-    "Update radar missed a signal from {mentions}. Please post your daily update now."
+    "Update radar missed a signal from {mentions}. Please post your daily update now.",
+    "Knock knock {mentions} - your daily update is missing in action. Please drop it in now.",
+    "Status check {mentions}: we are still waiting for your daily update. Please post when ready.",
+    "Gentle nudge {mentions} - no update found before 12:00 PM. Please send it now."
   ],
   "shame": [
     "Fun shame mode activated {mentions} - 3-day no-update streak unlocked. Patch notes tomorrow?",
     "Breaking news {mentions}: another 3-day update drought. Please return to regular broadcasting.",
-    "Daily update police are here {mentions} - 3 misses in a row. Redemption arc starts now."
+    "Daily update police are here {mentions} - 3 misses in a row. Redemption arc starts now.",
+    "Legend says {mentions} are still drafting the ultimate update. Day 3 reached. Please post now.",
+    "Emergency broadcast: {mentions} hit a 3-day silent streak. Comeback season starts today."
   ]
 }

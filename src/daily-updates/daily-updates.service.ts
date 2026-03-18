@@ -20,6 +20,8 @@ type DailyChannelConfig = {
 type DailyChannelState = {
   lastCheckedDate?: string;
   streaks: Record<string, number>;
+  pendingNoonDate?: string;
+  pendingNoonMissingUserIds?: string[];
 };
 
 type DailyState = {
@@ -41,6 +43,17 @@ type ChannelCheckResult = {
   excludedOnLeaveUserIds: string[];
   missingUserIds: string[];
   shameUserIds: string[];
+  skipped: boolean;
+  reason?: string;
+};
+
+type ChannelReconcileResult = {
+  channelId: string;
+  channelName: string;
+  noonMissingCount: number;
+  adjustedCount: number;
+  recoveredUserIds: string[];
+  unresolvedUserIds: string[];
   skipped: boolean;
   reason?: string;
 };
@@ -178,6 +191,8 @@ export class DailyUpdatesService {
         channelState.streaks[userId] = postedSet.has(userId) ? 0 : current + 1;
       }
       channelState.lastCheckedDate = dateKey;
+      channelState.pendingNoonDate = dateKey;
+      channelState.pendingNoonMissingUserIds = [...missingUserIds];
 
       if (missingUserIds.length > 0) {
         const mentions = this.toMentions(missingUserIds);
@@ -215,6 +230,128 @@ export class DailyUpdatesService {
 
     await this.saveState(state);
     return { date: dateKey, results };
+  }
+
+  async runEveningReconcile(): Promise<{
+    date: string;
+    windowStart: string;
+    windowEnd: string;
+    results: ChannelReconcileResult[];
+  }> {
+    const channels = await this.getChannelConfigs();
+    this.assertConfigured(channels);
+
+    const now = getSriLankaTime();
+    const dateKey = now.format('YYYY-MM-DD');
+    const dayStart = now.clone().hour(0).minute(0).second(0).millisecond(0);
+    const noonHour = this.getRangedIntEnv('DAILY_UPDATES_CUTOFF_HOUR', 12, 0, 23);
+    const noonMinute = this.getRangedIntEnv('DAILY_UPDATES_CUTOFF_MINUTE', 0, 0, 59);
+    const reconcileHour = this.getRangedIntEnv('DAILY_UPDATES_RECONCILE_HOUR', 19, 0, 23);
+    const reconcileMinute = this.getRangedIntEnv('DAILY_UPDATES_RECONCILE_MINUTE', 0, 0, 59);
+    const windowStart = dayStart
+      .clone()
+      .hour(noonHour)
+      .minute(noonMinute)
+      .second(0)
+      .millisecond(0);
+    const reconcileCutoff = dayStart
+      .clone()
+      .hour(reconcileHour)
+      .minute(reconcileMinute)
+      .second(0)
+      .millisecond(0);
+    const windowEnd = now.isBefore(reconcileCutoff) ? now.clone() : reconcileCutoff;
+    const state = await this.loadState();
+    const results: ChannelReconcileResult[] = [];
+
+    if (!windowEnd.isAfter(windowStart)) {
+      return {
+        date: dateKey,
+        windowStart: windowStart.toISOString(),
+        windowEnd: windowEnd.toISOString(),
+        results: channels.map((channel) => ({
+          channelId: channel.channelId,
+          channelName: channel.name,
+          noonMissingCount: 0,
+          adjustedCount: 0,
+          recoveredUserIds: [],
+          unresolvedUserIds: [],
+          skipped: true,
+          reason: 'Reconcile window has not started yet',
+        })),
+      };
+    }
+
+    for (const channel of channels) {
+      const channelState = this.ensureChannelState(state, channel.channelId);
+      if (channelState.pendingNoonDate !== dateKey) {
+        results.push({
+          channelId: channel.channelId,
+          channelName: channel.name,
+          noonMissingCount: 0,
+          adjustedCount: 0,
+          recoveredUserIds: [],
+          unresolvedUserIds: [],
+          skipped: true,
+          reason: 'No noon-check data available for today',
+        });
+        continue;
+      }
+
+      const noonMissingUserIds = this.normalizeStoredUserIds(
+        channelState.pendingNoonMissingUserIds,
+      );
+      if (noonMissingUserIds.length === 0) {
+        channelState.pendingNoonDate = undefined;
+        channelState.pendingNoonMissingUserIds = [];
+        results.push({
+          channelId: channel.channelId,
+          channelName: channel.name,
+          noonMissingCount: 0,
+          adjustedCount: 0,
+          recoveredUserIds: [],
+          unresolvedUserIds: [],
+          skipped: true,
+          reason: 'No pending noon-missing users for today',
+        });
+        continue;
+      }
+
+      const postedUserIds = await this.getPostedUserIds(
+        channel.channelId,
+        windowStart.toDate(),
+        windowEnd.toDate(),
+      );
+      const postedSet = new Set(postedUserIds.map((item) => item.userId));
+      const recoveredUserIds = noonMissingUserIds.filter((id) => postedSet.has(id));
+      const unresolvedUserIds = noonMissingUserIds.filter((id) => !postedSet.has(id));
+
+      for (const userId of recoveredUserIds) {
+        const current = channelState.streaks[userId] || 0;
+        channelState.streaks[userId] = Math.max(0, current - 1);
+      }
+
+      channelState.pendingNoonDate = undefined;
+      channelState.pendingNoonMissingUserIds = [];
+
+      results.push({
+        channelId: channel.channelId,
+        channelName: channel.name,
+        noonMissingCount: noonMissingUserIds.length,
+        adjustedCount: recoveredUserIds.length,
+        recoveredUserIds,
+        unresolvedUserIds,
+        skipped: false,
+      });
+    }
+
+    await this.saveState(state);
+    return {
+      date: dateKey,
+      windowStart: windowStart.toISOString(),
+      windowEnd: windowEnd.toISOString(),
+      results,
+    };
   }
 
   private resolveStateFilePath(): string {
@@ -554,6 +691,14 @@ export class DailyUpdatesService {
     if (content.length < minChars || words < minWords) return false;
 
     return true;
+  }
+
+  private normalizeStoredUserIds(input: unknown): string[] {
+    if (!Array.isArray(input)) return [];
+    const ids = input
+      .map((item) => String(item || '').trim())
+      .filter((item) => /^\d{15,25}$/.test(item));
+    return Array.from(new Set(ids));
   }
 
   private getPositiveIntEnv(key: string, fallback: number): number {
