@@ -31,7 +31,7 @@ export class ClickUpService {
 
   async getTasks(params?: { includeClosed?: boolean }): Promise<any[]> {
     if (!this.token) throw new Error('ClickUp API token not configured');
-    const { data } = await axios.get(`${this.baseUrl}/list/${this.getListId()}/task`, {
+    const { data } = await this.getWithRetry(`${this.baseUrl}/list/${this.getListId()}/task`, {
       headers: { Authorization: this.token, 'Content-Type': 'application/json' },
       params: {
         include_closed: params?.includeClosed ?? true,
@@ -44,7 +44,7 @@ export class ClickUpService {
   /** Get tasks from any list (e.g. Work Calendar). */
   async getTasksFromList(listId: string, params?: { includeClosed?: boolean }): Promise<any[]> {
     if (!this.token) throw new Error('ClickUp API token not configured');
-    const { data } = await axios.get(`${this.baseUrl}/list/${listId}/task`, {
+    const { data } = await this.getWithRetry(`${this.baseUrl}/list/${listId}/task`, {
       headers: { Authorization: this.token, 'Content-Type': 'application/json' },
       params: {
         include_closed: params?.includeClosed ?? true,
@@ -62,7 +62,7 @@ export class ClickUpService {
     reverse?: boolean;
   }): Promise<any[]> {
     if (!this.token) throw new Error('ClickUp API token not configured');
-    const { data } = await axios.get(`${this.baseUrl}/list/${this.getListId()}/task`, {
+    const { data } = await this.getWithRetry(`${this.baseUrl}/list/${this.getListId()}/task`, {
       headers: { Authorization: this.token, 'Content-Type': 'application/json' },
       params: {
         include_closed: params?.includeClosed ?? true,
@@ -89,7 +89,7 @@ export class ClickUpService {
   }> {
     if (!this.token) throw new Error('ClickUp API token not configured');
     const headers = { Authorization: this.token, 'Content-Type': 'application/json' };
-    const { data: spacesData } = await axios.get(`${this.baseUrl}/team/${workspaceId}/space`, { headers });
+    const { data: spacesData } = await this.getWithRetry(`${this.baseUrl}/team/${workspaceId}/space`, { headers });
     const spaces = spacesData?.spaces || [];
     const folders: Array<{ id: string; name: string; spaceId: string; spaceName: string; path: string }> = [];
     const lists: Array<{ id: string; name: string; space: string; spaceId: string; folder?: string; folderId?: string; path: string }> = [];
@@ -98,7 +98,7 @@ export class ClickUpService {
       const spacePath = space.name;
       try {
         // Folderless lists (directly in space)
-        const { data: folderlessData } = await axios.get(`${this.baseUrl}/space/${space.id}/list`, { headers });
+        const { data: folderlessData } = await this.getWithRetry(`${this.baseUrl}/space/${space.id}/list`, { headers });
         const folderlessLists = folderlessData?.lists || [];
         for (const list of folderlessLists) {
           lists.push({
@@ -110,13 +110,13 @@ export class ClickUpService {
           });
         }
         // Folders and their lists
-        const { data: foldersData } = await axios.get(`${this.baseUrl}/space/${space.id}/folder`, { headers });
+        const { data: foldersData } = await this.getWithRetry(`${this.baseUrl}/space/${space.id}/folder`, { headers });
         const spaceFolders = foldersData?.folders || [];
         for (const folder of spaceFolders) {
           const folderPath = `${spacePath} / ${folder.name}`;
           folders.push({ id: folder.id, name: folder.name, spaceId: space.id, spaceName: space.name, path: folderPath });
           try {
-            const { data: listData } = await axios.get(`${this.baseUrl}/folder/${folder.id}/list`, { headers });
+            const { data: listData } = await this.getWithRetry(`${this.baseUrl}/folder/${folder.id}/list`, { headers });
             const folderLists = listData?.lists || [];
             for (const list of folderLists) {
               lists.push({
@@ -211,5 +211,43 @@ export class ClickUpService {
       }
       return false;
     });
+  }
+
+  private async getWithRetry(url: string, options: Record<string, unknown>): Promise<any> {
+    const maxRetries = 5;
+    let attempt = 0;
+    let waitMs = 1000;
+
+    while (attempt <= maxRetries) {
+      try {
+        return await axios.get(url, {
+          timeout: 15000,
+          ...options,
+        });
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const shouldRetry = status === 429 || status >= 500 || !status;
+        if (!shouldRetry || attempt === maxRetries) {
+          throw err;
+        }
+
+        const retryAfterHeader = Number(err?.response?.headers?.['retry-after']);
+        const retryAfterBody = Number(err?.response?.data?.retry_after);
+        const retryAfterMs = Number.isFinite(retryAfterHeader)
+          ? Math.max(1000, Math.ceil(retryAfterHeader * 1000))
+          : Number.isFinite(retryAfterBody)
+            ? Math.max(1000, Math.ceil(retryAfterBody * 1000))
+            : waitMs;
+        await this.sleep(retryAfterMs);
+        waitMs = Math.min(waitMs * 2, 30000);
+        attempt += 1;
+      }
+    }
+
+    throw new Error('ClickUp request failed after retries');
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

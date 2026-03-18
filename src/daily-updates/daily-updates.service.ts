@@ -165,11 +165,28 @@ export class DailyUpdatesService {
         continue;
       }
 
-      const postedUserIds = await this.getPostedUserIds(
-        channel.channelId,
-        dayStart.toDate(),
-        cutoffTime.toDate(),
-      );
+      let postedUserIds: ValidUpdateMessage[] = [];
+      try {
+        postedUserIds = await this.getPostedUserIds(
+          channel.channelId,
+          dayStart.toDate(),
+          cutoffTime.toDate(),
+        );
+      } catch (error: any) {
+        results.push({
+          channelId: channel.channelId,
+          channelName: channel.name,
+          expectedCount: effectiveExpectedUserIds.length,
+          postedCount: 0,
+          excludedOnLeaveCount: excludedOnLeaveUserIds.length,
+          excludedOnLeaveUserIds,
+          missingUserIds: [],
+          shameUserIds: [],
+          skipped: true,
+          reason: `Message scan failed: ${error?.message || 'unknown error'}`,
+        });
+        continue;
+      }
       const postedSet = new Set(postedUserIds.map((item) => item.userId));
       const missingUserIds = effectiveExpectedUserIds.filter(
         (id) => !postedSet.has(id),
@@ -566,16 +583,10 @@ export class DailyUpdatesService {
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
       payload.embeds = [{ image: { url: imageUrl } }];
     }
-    await axios.post(
+    await this.discordRequestWithRetry(
+      'post',
       `${this.discordApiBase}/channels/${channelId}/messages`,
       payload,
-      {
-        headers: {
-          Authorization: `Bot ${this.botToken}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 15000,
-      },
     );
   }
 
@@ -588,20 +599,9 @@ export class DailyUpdatesService {
     const postedByUser = new Map<string, string>();
     let beforeMessageId: string | undefined;
 
-    for (let i = 0; i < 10; i++) {
-      const { data } = await axios.get(`${this.discordApiBase}/channels/${channelId}/messages`, {
-        headers: {
-          Authorization: `Bot ${this.botToken}`,
-          'Content-Type': 'application/json',
-        },
-        params: {
-          limit: 100,
-          ...(beforeMessageId ? { before: beforeMessageId } : {}),
-        },
-        timeout: 15000,
-      });
-
-      const messages = Array.isArray(data) ? data : [];
+    const maxPages = this.getPositiveIntEnv('DAILY_UPDATES_MESSAGE_SCAN_PAGES', 10);
+    for (let i = 0; i < maxPages; i++) {
+      const messages = await this.fetchChannelMessagesPage(channelId, beforeMessageId);
       if (messages.length === 0) break;
 
       let reachedOlderMessages = false;
@@ -636,6 +636,22 @@ export class DailyUpdatesService {
     }));
   }
 
+  private async fetchChannelMessagesPage(
+    channelId: string,
+    beforeMessageId?: string,
+  ): Promise<any[]> {
+    const { data } = await this.discordRequestWithRetry(
+      'get',
+      `${this.discordApiBase}/channels/${channelId}/messages`,
+      undefined,
+      {
+        limit: 100,
+        ...(beforeMessageId ? { before: beforeMessageId } : {}),
+      },
+    );
+    return Array.isArray(data) ? data : [];
+  }
+
   private async addReactionToMessage(
     channelId: string,
     messageId: string,
@@ -644,20 +660,61 @@ export class DailyUpdatesService {
     if (!this.botToken) return;
     const encodedEmoji = encodeURIComponent(emoji);
     try {
-      await axios.put(
+      await this.discordRequestWithRetry(
+        'put',
         `${this.discordApiBase}/channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}/@me`,
         null,
-        {
+      );
+    } catch {
+      // Best-effort reaction: do not fail the whole check.
+    }
+  }
+
+  private async discordRequestWithRetry(
+    method: 'get' | 'post' | 'put',
+    url: string,
+    data?: any,
+    params?: Record<string, unknown>,
+  ): Promise<any> {
+    if (!this.botToken) throw new Error('DISCORD_BOT_TOKEN not configured');
+    const maxRetries = 5;
+    let attempt = 0;
+    let waitMs = 1000;
+
+    while (attempt <= maxRetries) {
+      try {
+        return await axios({
+          method,
+          url,
+          data,
+          params,
           headers: {
             Authorization: `Bot ${this.botToken}`,
             'Content-Type': 'application/json',
           },
           timeout: 15000,
-        },
-      );
-    } catch {
-      // Best-effort reaction: do not fail the whole check.
+        });
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const shouldRetry = status === 429 || status >= 500 || !status;
+        if (!shouldRetry || attempt === maxRetries) {
+          throw err;
+        }
+
+        const retryAfterHeader = Number(err?.response?.headers?.['retry-after']);
+        const retryAfterBody = Number(err?.response?.data?.retry_after);
+        const retryAfterMs = Number.isFinite(retryAfterHeader)
+          ? Math.max(1000, Math.ceil(retryAfterHeader * 1000))
+          : Number.isFinite(retryAfterBody)
+            ? Math.max(1000, Math.ceil(retryAfterBody * 1000))
+            : waitMs;
+        await this.sleep(retryAfterMs);
+        waitMs = Math.min(waitMs * 2, 30000);
+        attempt += 1;
+      }
     }
+
+    throw new Error('Discord request failed after retries');
   }
 
   private isMeaningfulUpdateMessage(message: any): boolean {
@@ -699,6 +756,10 @@ export class DailyUpdatesService {
       .map((item) => String(item || '').trim())
       .filter((item) => /^\d{15,25}$/.test(item));
     return Array.from(new Set(ids));
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private getPositiveIntEnv(key: string, fallback: number): number {

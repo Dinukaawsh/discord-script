@@ -106,6 +106,7 @@ export class ChannelUsersController {
       <button onclick="trigger('/test-squad-notification')">Squad Notification</button>
       <button onclick="trigger('/daily-updates/reminder')">Daily Reminder</button>
       <button onclick="trigger('/daily-updates/noon-check')">Daily Noon Check</button>
+      <button onclick="trigger('/daily-updates/evening-reconcile')">Daily Evening Reconcile</button>
     </div>
   </div>
 
