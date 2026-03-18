@@ -271,4 +271,15 @@ export class AppController {
       timestamp: new Date().toISOString(),
     };
   }
+
+  @Get('daily-updates/evening-reconcile')
+  async triggerDailyUpdatesEveningReconcile() {
+    const result = await this.dailyUpdates.runEveningReconcile();
+    return {
+      success: true,
+      message: 'Daily update evening reconcile completed.',
+      ...result,
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

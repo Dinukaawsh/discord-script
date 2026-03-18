@@ -98,6 +98,8 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DAILY_UPDATES_STRICT_MESSAGE_VALIDATION` | No | Set `true` to enforce strict text rules (`MIN_CHARS`/`MIN_WORDS` + alphanumeric check). Default is lenient update detection. |
 | `DAILY_UPDATES_CUTOFF_HOUR` | No | Daily cutoff hour in Sri Lanka time (0-23, default `12`). |
 | `DAILY_UPDATES_CUTOFF_MINUTE` | No | Daily cutoff minute in Sri Lanka time (0-59, default `0`). |
+| `DAILY_UPDATES_RECONCILE_HOUR` | No | Evening reconcile cutoff hour in Sri Lanka time (0-23, default `19`). |
+| `DAILY_UPDATES_RECONCILE_MINUTE` | No | Evening reconcile cutoff minute in Sri Lanka time (0-59, default `0`). |
 | `DAILY_UPDATES_ADD_REACTION` | No | Set `true` to add reaction on each valid update message found during check. |
 | `DAILY_UPDATES_REACTION_EMOJI` | No | Emoji used for reactions (default `✅`). |
 | `DAILY_UPDATES_SHAME_GIF_URL` | No | Optional GIF/image URL appended to shame message. |
@@ -133,6 +135,7 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `GET` | `/check-now` | Check for **new leave requests** (last 2 hours) and send Discord notifications for each. |
 | `GET` | `/daily-updates/reminder` | Send 10:00 reminder message to tech + marketing channels. |
 | `GET` | `/daily-updates/noon-check` | Check posts before 12:00 PM, tag defaulters, and send 3-day streak fun shame tags. |
+| `GET` | `/daily-updates/evening-reconcile` | Reconcile late updates (after noon and up to 7:00 PM by default) and reduce same-day streak penalties for recovered users. |
 | `GET` | `/admin` | Minimal admin UI for managing channel user IDs and manual trigger buttons. |
 | `GET` | `/admin/channel-users` | Get channel user IDs saved in MongoDB. |
 | `GET` | `/admin/db-status` | Test MongoDB connectivity/status for admin UI. |

@@ -36,6 +36,12 @@ export async function handler(event: any) {
     return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: 'daily_updates_noon_check', ...result }) };
   }
 
+  if (schedule === 'daily_updates_evening_reconcile') {
+    console.log('🕖 Lambda: Running daily updates evening reconcile...');
+    const result = await dailyUpdatesService.runEveningReconcile();
+    return { statusCode: 200, body: JSON.stringify({ ok: true, schedule: 'daily_updates_evening_reconcile', ...result }) };
+  }
+
   if (schedule === 'squad_weekly') {
     console.log('📅 Lambda: Running squad-on-next-week notification...');
     const result = await leaveService.runSquadNotification();
