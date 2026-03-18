@@ -516,7 +516,7 @@ export class DailyUpdatesService {
       const userIds = new Set<string>();
       for (const task of onLeaveTasks) {
         const personName = this.normalizeName(getPersonNameFromTask(task));
-        const mappedUserId = nameMap[personName];
+        const mappedUserId = this.resolveMappedUserId(personName, nameMap);
         if (mappedUserId) {
           userIds.add(mappedUserId);
         }
@@ -538,6 +538,49 @@ export class DailyUpdatesService {
     }
     const single = String(value).trim();
     return single || null;
+  }
+
+  private resolveMappedUserId(
+    normalizedPersonName: string,
+    nameMap: Record<string, string>,
+  ): string | undefined {
+    if (!normalizedPersonName) return undefined;
+
+    const exact = nameMap[normalizedPersonName];
+    if (exact) return exact;
+
+    const mapEntries = Object.entries(nameMap);
+    const containsMatches = mapEntries.filter(
+      ([key]) =>
+        key.includes(normalizedPersonName) || normalizedPersonName.includes(key),
+    );
+    if (containsMatches.length === 1) {
+      return containsMatches[0][1];
+    }
+
+    const personTokens = this.nameTokens(normalizedPersonName);
+    if (personTokens.length === 0) return undefined;
+    const tokenMatches = mapEntries.filter(([key]) => {
+      const keyTokens = this.nameTokens(key);
+      if (keyTokens.length === 0) return false;
+      const shorter =
+        personTokens.length <= keyTokens.length ? personTokens : keyTokens;
+      const longer =
+        personTokens.length <= keyTokens.length ? keyTokens : personTokens;
+      return shorter.every((token) => longer.includes(token));
+    });
+    if (tokenMatches.length === 1) {
+      return tokenMatches[0][1];
+    }
+
+    return undefined;
+  }
+
+  private nameTokens(name: string): string[] {
+    return name
+      .split(/[\s._-]+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2);
   }
 
   private async getChannelConfigs(): Promise<DailyChannelConfig[]> {
@@ -720,10 +763,6 @@ export class DailyUpdatesService {
   private isMeaningfulUpdateMessage(message: any): boolean {
     const rawContent = String(message?.content || '');
     const content = rawContent.replace(/\s+/g, ' ').trim();
-    const hasAttachments =
-      Array.isArray(message?.attachments) && message.attachments.length > 0;
-    const hasEmbeds = Array.isArray(message?.embeds) && message.embeds.length > 0;
-    if (!content && !hasAttachments && !hasEmbeds) return false;
 
     const strictValidationEnabled =
       String(
@@ -734,10 +773,14 @@ export class DailyUpdatesService {
         .toLowerCase() === 'true';
 
     // Default mode is lenient because update channels are expected to contain
-    // only daily updates; any non-empty text/attachment/embed counts.
+    // only daily updates; any human-authored message counts.
     if (!strictValidationEnabled) return true;
 
     // Strict mode keeps previous filtering for text-heavy updates.
+    const hasAttachments =
+      Array.isArray(message?.attachments) && message.attachments.length > 0;
+    const hasEmbeds = Array.isArray(message?.embeds) && message.embeds.length > 0;
+    if (!content && !hasAttachments && !hasEmbeds) return false;
     if (!content) return false;
     const hasAlphaNum = /[A-Za-z0-9]/.test(content);
     if (!hasAlphaNum) return false;

@@ -45,6 +45,7 @@ async function bootstrap() {
     console.log(`📅 Test squad notification (Friday 6 PM): http://localhost:${port}/test-squad-notification`);
     console.log(`🕙 Daily updates reminder: http://localhost:${port}/daily-updates/reminder`);
     console.log(`🕛 Daily updates noon check: http://localhost:${port}/daily-updates/noon-check`);
+    console.log(`🕛 Daily updates evening reconcile: http://localhost:${port}/daily-updates/evening-reconcile`);
   }
 }
 
