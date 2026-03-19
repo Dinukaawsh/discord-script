@@ -36,46 +36,29 @@ export class AppController {
 
   @Get('check-now')
   async checkNow() {
-    const result = await this.leave.checkNewLeaveRequests();
-    return {
-      success: true,
-      newTasks: result.newTasks,
-      message: `Immediate check completed at ${new Date().toLocaleString()}`,
-      tasks: result.tasks,
-    };
+    this.leave.checkNewLeaveRequests().catch(console.error);
+    return { success: true, message: 'Leave check triggered.', timestamp: new Date().toISOString() };
   }
 
   @Get('test-daily-summary')
-  async testDailySummary(@Query('date') date?: string) {
-    await this.leave.runDailySummary(date || null);
-    if (date) {
-      return {
-        success: true,
-        message: `Daily summary test triggered successfully for ${date}`,
-        date,
-        timestamp: new Date().toLocaleString(),
-      };
-    }
+  testDailySummary(@Query('date') date?: string) {
+    this.leave.runDailySummary(date || null).catch(console.error);
     return {
       success: true,
-      message: 'Daily summary test triggered successfully for today',
-      timestamp: new Date().toLocaleString(),
+      message: date ? `Daily summary triggered for ${date}` : 'Daily summary triggered for today.',
+      timestamp: new Date().toISOString(),
     };
   }
 
   @Get('test-monthly-summary')
-  async testMonthlySummary() {
-    await this.leave.runMonthlySummary();
-    return {
-      success: true,
-      message: 'Monthly summary test triggered successfully',
-      timestamp: new Date().toLocaleString(),
-    };
+  testMonthlySummary() {
+    this.leave.runMonthlySummary().catch(console.error);
+    return { success: true, message: 'Monthly summary triggered.', timestamp: new Date().toISOString() };
   }
 
   /** Weekly leave summary. Use ?date=YYYY-MM-DD (week containing that date) or ?weeksAgo=0|1|2 (this week, last week, etc.). */
   @Get('test-weekly-summary')
-  async testWeeklySummary(
+  testWeeklySummary(
     @Query('date') date?: string,
     @Query('weeksAgo') weeksAgoParam?: string,
   ) {
@@ -86,16 +69,8 @@ export class AppController {
         : weeksAheadNum !== undefined && !isNaN(weeksAheadNum) && weeksAheadNum >= 0
           ? { date: undefined, weeksAgo: weeksAheadNum }
           : undefined;
-    const result = await this.leave.runWeeklySummary(options);
-    return {
-      success: true,
-      message: `Weekly summary sent for ${result.weekLabel} (${result.weekStart.toLocaleDateString()} – ${result.weekEnd.toLocaleDateString()})`,
-      weekStart: result.weekStart.toISOString(),
-      weekEnd: result.weekEnd.toISOString(),
-      weekLabel: result.weekLabel,
-      count: result.count,
-      timestamp: new Date().toLocaleString(),
-    };
+    this.leave.runWeeklySummary(options).catch(console.error);
+    return { success: true, message: 'Weekly summary triggered.', timestamp: new Date().toISOString() };
   }
 
   @Get('check-leave-on-date/:date')
@@ -224,14 +199,10 @@ export class AppController {
 
   /** Send Discord notification: squad on a future week (same as Friday 6 PM job). Use ?weeksAhead=1 (next week), 2 (week after next), etc. */
   @Get('test-squad-notification')
-  async testSquadNotification(@Query('weeksAhead') weeksAheadParam?: string) {
+  testSquadNotification(@Query('weeksAhead') weeksAheadParam?: string) {
     const weeksAhead = Math.max(1, parseInt(weeksAheadParam ?? '1', 10) || 1);
-    const result = await this.leave.runSquadNotification(weeksAhead);
-    return {
-      success: true,
-      message: `Squad-on-week Discord notification sent (weeksAhead=${weeksAhead}).`,
-      ...result,
-    };
+    this.leave.runSquadNotification(weeksAhead).catch(console.error);
+    return { success: true, message: `Squad notification triggered (weeksAhead=${weeksAhead}).`, timestamp: new Date().toISOString() };
   }
 
   /** Find list, folder, or space by name (e.g. "work calendar"). Case-insensitive. */
@@ -251,35 +222,20 @@ export class AppController {
   }
 
   @Get('daily-updates/reminder')
-  async triggerDailyUpdatesReminder() {
-    const result = await this.dailyUpdates.sendMorningReminder();
-    return {
-      success: true,
-      message: 'Daily update reminder sent to configured channels.',
-      ...result,
-      timestamp: new Date().toISOString(),
-    };
+  triggerDailyUpdatesReminder() {
+    this.dailyUpdates.sendMorningReminder().catch(console.error);
+    return { success: true, message: 'Daily update reminder triggered.', timestamp: new Date().toISOString() };
   }
 
   @Get('daily-updates/noon-check')
-  async triggerDailyUpdatesNoonCheck() {
-    const result = await this.dailyUpdates.runNoonCheck();
-    return {
-      success: true,
-      message: 'Daily update noon check completed.',
-      ...result,
-      timestamp: new Date().toISOString(),
-    };
+  triggerDailyUpdatesNoonCheck() {
+    this.dailyUpdates.runNoonCheck().catch(console.error);
+    return { success: true, message: 'Daily update noon check triggered.', timestamp: new Date().toISOString() };
   }
 
   @Get('daily-updates/evening-reconcile')
-  async triggerDailyUpdatesEveningReconcile() {
-    const result = await this.dailyUpdates.runEveningReconcile();
-    return {
-      success: true,
-      message: 'Daily update evening reconcile completed.',
-      ...result,
-      timestamp: new Date().toISOString(),
-    };
+  triggerDailyUpdatesEveningReconcile() {
+    this.dailyUpdates.runEveningReconcile().catch(console.error);
+    return { success: true, message: 'Daily update evening reconcile triggered.', timestamp: new Date().toISOString() };
   }
 }

@@ -71,8 +71,8 @@ export class ChannelUsersService {
     }
   }
 
-  async getAll(): Promise<Record<ChannelKey, string[]>> {
-    const defaults: Record<ChannelKey, string[]> = { tech: [], marketing: [] };
+  async getAll(): Promise<Record<ChannelKey, string[]> & { allUsers: string[] }> {
+    const defaults = { tech: [] as string[], marketing: [] as string[], allUsers: [] as string[] };
     if (!this.isEnabled()) return defaults;
 
     const collection = await this.getUsersCollection();
@@ -83,8 +83,34 @@ export class ChannelUsersService {
       if (key === 'tech' || key === 'marketing') {
         defaults[key] = this.normalizeUserIds(doc.userIds);
       }
+      if (String(doc.channelKey).trim().toLowerCase() === 'all') {
+        defaults.allUsers = this.normalizeUserIds(doc.userIds);
+      }
     }
     return defaults;
+  }
+
+  async getAllUsers(): Promise<string[]> {
+    if (!this.isEnabled()) return [];
+    try {
+      const collection = await this.getUsersCollection();
+      const doc = await collection.findOne({ channelKey: 'all' });
+      return doc ? this.normalizeUserIds(doc.userIds) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async setAllUsers(userIdsInput: string | string[]): Promise<string[]> {
+    if (!this.isEnabled()) throw new Error('MONGODB_URI is not configured');
+    const userIds = this.normalizeUserIds(userIdsInput);
+    const collection = await this.getUsersCollection();
+    await collection.updateOne(
+      { channelKey: 'all' },
+      { $set: { channelKey: 'all', userIds, updatedAt: new Date() } },
+      { upsert: true },
+    );
+    return userIds;
   }
 
   async set(channelKey: ChannelKey, userIdsInput: string | string[]): Promise<string[]> {

@@ -65,6 +65,7 @@ type ValidUpdateMessage = {
 
 type PostMessageOptions = {
   imageUrl?: string;
+  fileAttachment?: { data: Buffer; name: string; contentType: string };
 };
 
 const DEFAULT_REMINDER_MESSAGE =
@@ -99,6 +100,15 @@ export class DailyUpdatesService {
       channels.length > 0 &&
       channels.every((channel) => channel.expectedUserIds.length > 0)
     );
+  }
+
+  async broadcastMessage(
+    channelId: string,
+    content: string,
+    imageUrl?: string,
+    fileAttachment?: { data: Buffer; name: string; contentType: string },
+  ): Promise<void> {
+    await this.postChannelMessage(channelId, content, { imageUrl, fileAttachment });
   }
 
   async sendMorningReminder(): Promise<{ sentTo: string[] }> {
@@ -633,7 +643,16 @@ export class DailyUpdatesService {
       payload.embeds = [{ image: { url: imageUrl } }];
     }
     const rest = this.getDiscordRest();
-    await rest.post(`/channels/${channelId}/messages` as any, { body: payload });
+    const file = options?.fileAttachment;
+    if (file) {
+      payload.attachments = [{ id: '0' }];
+      await rest.post(`/channels/${channelId}/messages` as any, {
+        body: payload,
+        files: [{ key: 'files[0]', name: file.name, data: file.data, contentType: file.contentType }],
+      });
+    } else {
+      await rest.post(`/channels/${channelId}/messages` as any, { body: payload });
+    }
   }
 
   private async getPostedUserIds(

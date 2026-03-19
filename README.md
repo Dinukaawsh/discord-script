@@ -84,6 +84,8 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DISCORD_BOT_TOKEN` | Yes* | Bot token used to read channel messages and post reminder/defaulter/shame messages. |
 | `TECH_UPDATES_CHANNEL_ID` | Yes* | Discord channel ID for tech daily updates. |
 | `MARKETING_UPDATES_CHANNEL_ID` | Yes* | Discord channel ID for marketing daily updates. |
+| `GENERAL_CHANNEL_ID` | No | Discord channel ID for the General channel (available in admin composer). |
+| `TOOLS_CHANNEL_ID` | No | Discord channel ID for the Tools channel (available in admin composer). |
 | `TECH_UPDATES_USER_IDS` | No | Fallback comma-separated IDs for tech channel (used when MongoDB config is unavailable/empty). |
 | `MARKETING_UPDATES_USER_IDS` | No | Fallback comma-separated IDs for marketing channel (used when MongoDB config is unavailable/empty). |
 | `MONGODB_URI` | No | MongoDB connection string for admin-managed channel user IDs. |
