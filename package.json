@@ -10,7 +10,7 @@
     "serve": "node dist/main.js",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
-    "lambda:build": "nest build && cp package.json dist/ && cd dist && npm install --production && zip -r ../lambda.zip .",
+    "lambda:build": "nest build && node -e \"const fs=require('fs');fs.copyFileSync('package.json','dist/package.json')\" && cd dist && npm install --omit=dev && cd .. && powershell Compress-Archive -Path dist/* -DestinationPath lambda.zip -Force",
     "lambda:invoke": "node -e \"require('./dist/lambda').handler({ schedule: 'daily' }).then(r => console.log(r))\""
   },
   "dependencies": {

@@ -628,7 +628,7 @@ export class DailyUpdatesService {
 
   private getDiscordRest(): REST {
     if (!this.botToken) throw new Error('DISCORD_BOT_TOKEN not configured');
-    return new REST({ version: '10' }).setToken(this.botToken);
+    return new REST({ version: '10', timeout: 20_000 }).setToken(this.botToken);
   }
 
   private async postChannelMessage(

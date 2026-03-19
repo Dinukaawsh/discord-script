@@ -252,7 +252,7 @@ export class DiscordService {
     const match = this.webhookUrl.match(/webhooks\/(\d+)\/([\w-]+)/);
     if (!match) throw new Error(`Invalid DISCORD_WEBHOOK_URL format: ${this.webhookUrl}`);
     const [, webhookId, webhookToken] = match;
-    const rest = new REST({ version: '10' });
+    const rest = new REST({ version: '10', timeout: 20_000 });
     await rest.post(`/webhooks/${webhookId}/${webhookToken}` as any, {
       auth: false,
       body: payload,
