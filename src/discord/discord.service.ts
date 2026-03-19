@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import { REST } from '@discordjs/rest';
 import {
   getPersonNameFromTask,
   getLeavePeriodFromTask,
@@ -9,8 +9,6 @@ import {
 
 const DISCORD_FIELD_VALUE_LIMIT = 1024;
 const MAX_CHUNK_LEN = DISCORD_FIELD_VALUE_LIMIT - 4;
-const DISCORD_MAX_RETRIES = 5;
-const DISCORD_BASE_RETRY_MS = 1000;
 
 @Injectable()
 export class DiscordService {
@@ -249,38 +247,16 @@ export class DiscordService {
 
   private async postWebhook(payload: Record<string, unknown>): Promise<void> {
     if (!this.webhookUrl) throw new Error('Discord webhook URL not configured');
-    for (let attempt = 0; attempt <= DISCORD_MAX_RETRIES; attempt++) {
-      try {
-        await axios.post(this.webhookUrl, payload, { timeout: 15000 });
-        return;
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const shouldRetry = status === 429 || status >= 500 || !status;
-        if (!shouldRetry || attempt === DISCORD_MAX_RETRIES) throw err;
-        const delayMs = this.getRetryDelayMs(err, attempt);
-        // Avoid tight retry loops against Discord's rate limiter.
-        await this.sleep(delayMs);
-      }
-    }
-  }
-
-  private getRetryDelayMs(err: any, attempt: number): number {
-    const retryAfterHeader = err?.response?.headers?.['retry-after'];
-    const retryAfterSeconds = Number(retryAfterHeader);
-    if (!isNaN(retryAfterSeconds) && retryAfterSeconds > 0) {
-      return Math.ceil(retryAfterSeconds * 1000) + 250;
-    }
-    const retryAfterBody = Number(err?.response?.data?.retry_after);
-    if (!isNaN(retryAfterBody) && retryAfterBody > 0) {
-      return Math.ceil(retryAfterBody * 1000) + 250;
-    }
-    const backoff = DISCORD_BASE_RETRY_MS * Math.pow(2, attempt);
-    const jitter = Math.floor(Math.random() * 300);
-    return backoff + jitter;
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    // Extract webhook id and token from the URL so @discordjs/rest can manage
+    // per-webhook rate-limit buckets and automatic retry-after handling.
+    const match = this.webhookUrl.match(/webhooks\/(\d+)\/([\w-]+)/);
+    if (!match) throw new Error(`Invalid DISCORD_WEBHOOK_URL format: ${this.webhookUrl}`);
+    const [, webhookId, webhookToken] = match;
+    const rest = new REST({ version: '10' });
+    await rest.post(`/webhooks/${webhookId}/${webhookToken}` as any, {
+      auth: false,
+      body: payload,
+    });
   }
 
   private addChunkedField(embed: any, fieldName: string, fullValue: string): void {
