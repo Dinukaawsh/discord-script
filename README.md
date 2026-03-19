@@ -102,11 +102,27 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DAILY_UPDATES_RECONCILE_MINUTE` | No | Evening reconcile cutoff minute in Sri Lanka time (0-59, default `0`). |
 | `DAILY_UPDATES_ADD_REACTION` | No | Set `true` to add reaction on each valid update message found during check. |
 | `DAILY_UPDATES_REACTION_EMOJI` | No | Emoji used for reactions (default `✅`). |
-| `DAILY_UPDATES_SHAME_GIF_URL` | No | Optional GIF/image URL appended to shame message. |
+| `DAILY_UPDATES_MISSING_GIF_URL` | No | Optional GIF/image URL appended to the noon missing-update message. |
+| `DAILY_UPDATES_SHAME_GIF_URL` | No | Optional GIF/image URL appended to the 3-day streak shame message. |
 | `DAILY_UPDATES_EXCLUDE_ON_LEAVE` | No | Set `true` to exclude people on leave (from ClickUp) from missing/shame checks. |
 | `DAILY_UPDATES_LEAVE_MAP_FILE` | No | Fallback JSON mapping from ClickUp name to Discord ID when MongoDB map is empty/unavailable. |
 | `DAILY_UPDATES_LEAVE_MAP_JSON` | No | Inline fallback mapping alternative (used before file if valid). |
 | `PORT` | No | Server port (default `3000`). |
+
+---
+
+## Discord Rate Limiting
+
+All Discord API calls (bot messages, message reads, reactions) use **[`@discordjs/rest`](https://discord.js.org/)** — Discord's official REST client. It automatically:
+
+- Tracks **per-route rate-limit buckets** (`X-RateLimit-Bucket` / `X-RateLimit-Remaining` / `X-RateLimit-Reset` headers)
+- Queues requests when a bucket is exhausted and retries after the correct `retry_after` delay
+- Enforces the **global 50 req/s cap**
+- Sends the correct `DiscordBot` `User-Agent` header
+
+This means no manual pacing variables are needed. The `DAILY_UPDATES_DISCORD_PACE_MS` and `DAILY_UPDATES_REACTION_PACE_MS` env vars from previous versions are no longer used and can be removed from your deployment.
+
+Discord **webhook** calls (leave summaries, squad notifications) use the same REST client with per-webhook bucket isolation, so they are also protected from rate limit errors on Render and similar shared-IP hosts.
 
 ---
 
@@ -247,7 +263,7 @@ discord-script/
 │   │   └── clickup.service.ts  # ClickUp API: tasks, lists, folders, Work Calendar, findByName
 │   ├── discord/
 │   │   ├── discord.module.ts
-│   │   └── discord.service.ts  # Discord webhooks: daily/monthly/weekly/squad notifications
+│   │   └── discord.service.ts  # Discord webhooks via @discordjs/rest (rate-limit safe): leave/monthly/weekly/squad notifications
 │   └── leave/
 │       ├── leave.module.ts
 │       ├── leave.controller.ts # /leave/* (optional duplicate routes)

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import { REST } from '@discordjs/rest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
@@ -76,7 +76,6 @@ const DEFAULT_SHAME_MESSAGE =
 
 @Injectable()
 export class DailyUpdatesService {
-  private readonly discordApiBase = 'https://discord.com/api/v10';
   private readonly botToken: string | undefined;
   private readonly stateFilePath: string;
   private readonly messagesFilePath: string | undefined;
@@ -214,9 +213,11 @@ export class DailyUpdatesService {
       if (missingUserIds.length > 0) {
         const mentions = this.toMentions(missingUserIds);
         const missingTemplate = await this.getMissingMessage();
+        const missingGifUrl = this.config.get<string>('DAILY_UPDATES_MISSING_GIF_URL')?.trim();
         await this.postChannelMessage(
           channel.channelId,
           this.renderTemplate(missingTemplate, mentions),
+          { imageUrl: missingGifUrl },
         );
       }
 
@@ -615,6 +616,11 @@ export class DailyUpdatesService {
     return channels;
   }
 
+  private getDiscordRest(): REST {
+    if (!this.botToken) throw new Error('DISCORD_BOT_TOKEN not configured');
+    return new REST({ version: '10' }).setToken(this.botToken);
+  }
+
   private async postChannelMessage(
     channelId: string,
     content: string,
@@ -626,11 +632,8 @@ export class DailyUpdatesService {
     if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
       payload.embeds = [{ image: { url: imageUrl } }];
     }
-    await this.discordRequestWithRetry(
-      'post',
-      `${this.discordApiBase}/channels/${channelId}/messages`,
-      payload,
-    );
+    const rest = this.getDiscordRest();
+    await rest.post(`/channels/${channelId}/messages` as any, { body: payload });
   }
 
   private async getPostedUserIds(
@@ -642,7 +645,7 @@ export class DailyUpdatesService {
     const postedByUser = new Map<string, string>();
     let beforeMessageId: string | undefined;
 
-    const maxPages = this.getPositiveIntEnv('DAILY_UPDATES_MESSAGE_SCAN_PAGES', 10);
+    const maxPages = 2;
     for (let i = 0; i < maxPages; i++) {
       const messages = await this.fetchChannelMessagesPage(channelId, beforeMessageId);
       if (messages.length === 0) break;
@@ -683,14 +686,11 @@ export class DailyUpdatesService {
     channelId: string,
     beforeMessageId?: string,
   ): Promise<any[]> {
-    const { data } = await this.discordRequestWithRetry(
-      'get',
-      `${this.discordApiBase}/channels/${channelId}/messages`,
-      undefined,
-      {
-        limit: 100,
-        ...(beforeMessageId ? { before: beforeMessageId } : {}),
-      },
+    const rest = this.getDiscordRest();
+    const query = new URLSearchParams({ limit: '100' });
+    if (beforeMessageId) query.set('before', beforeMessageId);
+    const data = await rest.get(
+      `/channels/${channelId}/messages?${query.toString()}` as any,
     );
     return Array.isArray(data) ? data : [];
   }
@@ -703,61 +703,13 @@ export class DailyUpdatesService {
     if (!this.botToken) return;
     const encodedEmoji = encodeURIComponent(emoji);
     try {
-      await this.discordRequestWithRetry(
-        'put',
-        `${this.discordApiBase}/channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}/@me`,
-        null,
+      const rest = this.getDiscordRest();
+      await rest.put(
+        `/channels/${channelId}/messages/${messageId}/reactions/${encodedEmoji}/@me` as any,
       );
     } catch {
       // Best-effort reaction: do not fail the whole check.
     }
-  }
-
-  private async discordRequestWithRetry(
-    method: 'get' | 'post' | 'put',
-    url: string,
-    data?: any,
-    params?: Record<string, unknown>,
-  ): Promise<any> {
-    if (!this.botToken) throw new Error('DISCORD_BOT_TOKEN not configured');
-    const maxRetries = 5;
-    let attempt = 0;
-    let waitMs = 1000;
-
-    while (attempt <= maxRetries) {
-      try {
-        return await axios({
-          method,
-          url,
-          data,
-          params,
-          headers: {
-            Authorization: `Bot ${this.botToken}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 15000,
-        });
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const shouldRetry = status === 429 || status >= 500 || !status;
-        if (!shouldRetry || attempt === maxRetries) {
-          throw err;
-        }
-
-        const retryAfterHeader = Number(err?.response?.headers?.['retry-after']);
-        const retryAfterBody = Number(err?.response?.data?.retry_after);
-        const retryAfterMs = Number.isFinite(retryAfterHeader)
-          ? Math.max(1000, Math.ceil(retryAfterHeader * 1000))
-          : Number.isFinite(retryAfterBody)
-            ? Math.max(1000, Math.ceil(retryAfterBody * 1000))
-            : waitMs;
-        await this.sleep(retryAfterMs);
-        waitMs = Math.min(waitMs * 2, 30000);
-        attempt += 1;
-      }
-    }
-
-    throw new Error('Discord request failed after retries');
   }
 
   private isMeaningfulUpdateMessage(message: any): boolean {
