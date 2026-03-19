@@ -4,6 +4,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
+  // Extend timeout to 5 minutes for long-running cron endpoints
+  // (noon-check with reactions can take 60-120s on Render)
+  app.getHttpServer().setTimeout(5 * 60 * 1000);
   const preferredPort = Number(process.env.PORT) || 3000;
   const maxPort = Math.min(preferredPort + 10, 65535);
 
