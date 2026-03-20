@@ -648,7 +648,7 @@ export class DailyUpdatesService {
       payload.attachments = [{ id: '0' }];
       await rest.post(`/channels/${channelId}/messages` as any, {
         body: payload,
-        files: [{ key: 'files[0]', name: file.name, data: file.data, contentType: file.contentType }],
+        files: [{ key: 'files[0]', name: file.name, data: file.data }],
       });
     } else {
       await rest.post(`/channels/${channelId}/messages` as any, { body: payload });
