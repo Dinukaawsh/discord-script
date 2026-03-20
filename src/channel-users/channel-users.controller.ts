@@ -107,6 +107,19 @@ export class ChannelUsersController {
       <button onclick="saveAllUsers()">Save All Users</button>
     </div>
   </div>
+  <div class="card">
+    <label>Roles — Composer Mentions <span class="badge">Composer</span></label>
+    <p class="muted" style="margin:4px 0 8px">Add role IDs here — they appear as buttons in the composer alongside @everyone and @here.</p>
+    <div id="rolesTable" style="margin-bottom:10px"></div>
+    <div class="row" style="gap:8px;align-items:center">
+      <input id="newRoleName" type="text" placeholder="Role name (e.g. Backend)" style="width:160px" />
+      <input id="newRoleId" type="text" placeholder="Role ID" style="width:180px" />
+      <button class="small" onclick="addRoleRow()">+ Add</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button onclick="saveRoles()">Save Roles</button>
+    </div>
+  </div>
 
   <h2>Message Templates</h2>
   <div class="card">
@@ -172,8 +185,7 @@ export class ChannelUsersController {
     <div class="role-row">
       <button class="small" onclick="insertText('@everyone')">@everyone</button>
       <button class="small" onclick="insertText('@here')">@here</button>
-      <input id="customRoleId" type="text" placeholder="Role ID" style="width:160px" />
-      <button class="small secondary" onclick="insertCustomRole()">Insert Role</button>
+      <span id="savedRoleBtns"></span>
     </div>
 
     <label style="margin-top:12px">Attach Image from Device <span class="muted" style="font-weight:400">(optional — overrides GIF URL if both set)</span></label>
@@ -225,6 +237,7 @@ export class ChannelUsersController {
     let channelUserMap = { tech: [], marketing: [] };
     let allUsersForComposer = [];
     let discordIdToName = {};
+    let rolesData = [];
 
     function apiHeaders() {
       const apiKey = apiKeyInput.value.trim();
@@ -269,6 +282,10 @@ export class ChannelUsersController {
           if (!discordIdToName[id]) discordIdToName[id] = name;
         }
         renderMentionUsers();
+        // Load and render saved roles
+        rolesData = data.roles || [];
+        renderRolesTable();
+        renderSavedRoleBtns();
         setOut(data);
       } catch (e) {
         setOut(String(e));
@@ -289,9 +306,9 @@ export class ChannelUsersController {
         return;
       }
       container.innerHTML = ids.map(id => {
-        const name = discordIdToName[id] || id;
-        const shortName = name.split(' ')[0];
-        return '<button type="button" onclick="insertText(\\' <@' + id + '>\\' )" title="' + id + '">' + shortName + '</button>';
+        const name = discordIdToName[id];
+        const shortName = name ? name.split(' ')[0] : ('·' + id.slice(-4));
+        return '<button type="button" onclick="insertText(\\' <@' + id + '>\\' )" title="' + (name || id) + '">' + shortName + '</button>';
       }).join('');
     }
 
@@ -437,6 +454,63 @@ export class ChannelUsersController {
         const data = await res.json();
         setOut(data);
         if (res.ok) loadUsers();
+      } catch (e) {
+        setOut(String(e));
+      }
+    }
+
+    function renderRolesTable() {
+      const container = document.getElementById('rolesTable');
+      if (!container) return;
+      if (rolesData.length === 0) {
+        container.innerHTML = '<span class="muted">No roles saved yet.</span>';
+        return;
+      }
+      container.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+        '<thead><tr><th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dde1e8">Name</th><th style="text-align:left;padding:4px 8px;border-bottom:1px solid #dde1e8">Role ID</th><th style="padding:4px 8px;border-bottom:1px solid #dde1e8"></th></tr></thead><tbody>' +
+        rolesData.map((r, i) =>
+          '<tr><td style="padding:4px 8px">' + r.name + '</td><td style="padding:4px 8px;font-family:monospace">' + r.id + '</td>' +
+          '<td style="padding:4px 8px"><button class="small secondary" onclick="removeRole(' + i + ')">Remove</button></td></tr>'
+        ).join('') +
+        '</tbody></table>';
+    }
+
+    function renderSavedRoleBtns() {
+      const container = document.getElementById('savedRoleBtns');
+      if (!container) return;
+      container.innerHTML = rolesData.map(r =>
+        '<button class="small" style="margin-left:6px" onclick="insertText(\\' <@&' + r.id + '>\\' )" title="' + r.id + '">@' + r.name + '</button>'
+      ).join('');
+    }
+
+    function addRoleRow() {
+      const name = document.getElementById('newRoleName').value.trim();
+      const id = document.getElementById('newRoleId').value.trim();
+      if (!name || !id) return alert('Enter both name and role ID.');
+      if (!/^\\d{15,25}$/.test(id)) return alert('Role ID must be a valid Discord snowflake (15–25 digits).');
+      if (rolesData.find(r => r.id === id)) return alert('This role ID is already added.');
+      rolesData.push({ name, id });
+      document.getElementById('newRoleName').value = '';
+      document.getElementById('newRoleId').value = '';
+      renderRolesTable();
+      renderSavedRoleBtns();
+    }
+
+    function removeRole(index) {
+      rolesData.splice(index, 1);
+      renderRolesTable();
+      renderSavedRoleBtns();
+    }
+
+    async function saveRoles() {
+      try {
+        const res = await fetch('/admin/roles', {
+          method: 'PUT',
+          headers: apiHeaders(),
+          body: JSON.stringify({ roles: rolesData }),
+        });
+        const data = await res.json();
+        setOut(data);
       } catch (e) {
         setOut(String(e));
       }
@@ -631,6 +705,18 @@ export class ChannelUsersController {
       success: true,
       message: 'Daily update state reset successfully',
     };
+  }
+
+  @Get('admin/roles')
+  async getRoles() {
+    const roles = await this.channelUsers.getRoles();
+    return { success: true, roles };
+  }
+
+  @Put('admin/roles')
+  async saveRoles(@Body('roles') roles: Array<{ name: string; id: string }>) {
+    const saved = await this.channelUsers.setRoles(roles || []);
+    return { success: true, count: saved.length, roles: saved };
   }
 
   @Post('admin/post-message')
