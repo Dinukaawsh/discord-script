@@ -205,7 +205,7 @@ export class DailyUpdatesService {
         .trim()
         .toLowerCase() === 'true';
       if (shouldReact) {
-        const reactionEmoji = this.config.get<string>('DAILY_UPDATES_REACTION_EMOJI')?.trim() || '✅';
+        const reactionEmoji = '✅';
         for (const posted of postedUserIds) {
           if (!effectiveExpectedUserIds.includes(posted.userId)) continue;
           await this.addReactionToMessage(channel.channelId, posted.messageId, reactionEmoji);

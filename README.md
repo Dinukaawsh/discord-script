@@ -103,7 +103,6 @@ By default the server listens on **http://localhost:3000** (or the next free por
 | `DAILY_UPDATES_RECONCILE_HOUR` | No | Evening reconcile cutoff hour in Sri Lanka time (0-23, default `19`). |
 | `DAILY_UPDATES_RECONCILE_MINUTE` | No | Evening reconcile cutoff minute in Sri Lanka time (0-59, default `0`). |
 | `DAILY_UPDATES_ADD_REACTION` | No | Set `true` to add reaction on each valid update message found during check. |
-| `DAILY_UPDATES_REACTION_EMOJI` | No | Emoji used for reactions (default `✅`). |
 | `DAILY_UPDATES_MISSING_GIF_URL` | No | Optional GIF/image URL appended to the noon missing-update message. |
 | `DAILY_UPDATES_SHAME_GIF_URL` | No | Optional GIF/image URL appended to the 3-day streak shame message. |
 | `DAILY_UPDATES_EXCLUDE_ON_LEAVE` | No | Set `true` to exclude people on leave (from ClickUp) from missing/shame checks. |
