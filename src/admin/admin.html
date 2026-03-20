@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Twist Digital Notifications</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brand: #5865f2;
+      --brand-dark: #4752c4;
+      --brand-light: rgba(88,101,242,0.10);
+      --brand-mid: rgba(88,101,242,0.18);
+      --success: #3ba55c;
+      --danger: #ed4245;
+      --warn: #e67e22;
+      --bg: #eef0f5;
+      --surface: #ffffff;
+      --surface2: #f7f8fb;
+      --border: #e2e5ec;
+      --text: #1a1a2e;
+      --muted: #7b8294;
+      --radius: 12px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.10);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ════════════ LOGIN ════════════ */
+    #loginScreen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      background: linear-gradient(135deg, #eef0f5 0%, #e4e8f5 100%);
+    }
+    .login-card {
+      background: var(--surface);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 52px 48px 44px;
+      width: 100%;
+      max-width: 460px;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.8);
+    }
+    .login-logo {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, var(--brand) 0%, #7b6fff 100%);
+      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 22px;
+      font-size: 30px;
+      box-shadow: 0 6px 20px rgba(88,101,242,0.35);
+    }
+    .login-card h1 { font-size: 24px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.4px; }
+    .login-card .login-sub { font-size: 14px; color: var(--muted); margin-bottom: 36px; }
+    .login-label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; text-align: left; margin-bottom: 8px; }
+    .input-wrap { position: relative; margin-bottom: 8px; }
+    .input-wrap input {
+      width: 100%;
+      padding: 13px 48px 13px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      font-size: 14px;
+      background: var(--surface2);
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+      letter-spacing: 0.5px;
+    }
+    .input-wrap input:focus {
+      outline: none;
+      border-color: var(--brand);
+      box-shadow: 0 0 0 4px var(--brand-light);
+      background: #fff;
+    }
+    .eye-btn {
+      position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; color: var(--muted);
+      font-size: 16px; padding: 4px; line-height: 1; border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .eye-btn:hover { color: var(--brand); background: var(--brand-light); }
+    #loginError {
+      font-size: 13px; color: var(--danger); margin-bottom: 14px;
+      min-height: 20px; display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .btn-login {
+      width: 100%; padding: 13px; margin-top: 8px;
+      background: linear-gradient(135deg, var(--brand) 0%, #7b6fff 100%);
+      color: #fff; border: none; border-radius: 12px; font-size: 15px;
+      font-weight: 700; cursor: pointer; letter-spacing: 0.2px;
+      transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+      box-shadow: 0 4px 14px rgba(88,101,242,0.4);
+    }
+    .btn-login:hover { opacity: 0.92; box-shadow: 0 6px 20px rgba(88,101,242,0.45); }
+    .btn-login:active { transform: scale(0.98); }
+    .btn-login:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+    .login-hint { font-size: 12px; color: var(--muted); margin-top: 16px; }
+
+    /* ════════════ APP SHELL ════════════ */
+    #appScreen { display: none; min-height: 100vh; }
+
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 40px;
+      display: flex; align-items: center; gap: 20px;
+      height: 62px; position: sticky; top: 0; z-index: 200;
+      box-shadow: var(--shadow-sm);
+    }
+    .topbar-brand {
+      font-size: 15px; font-weight: 800; color: var(--brand);
+      display: flex; align-items: center; gap: 9px; white-space: nowrap;
+      letter-spacing: -0.3px;
+    }
+    .topbar-brand .brand-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--brand), #7b6fff);
+      border-radius: 9px; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; box-shadow: 0 2px 8px rgba(88,101,242,0.3);
+    }
+    .tab-nav { display: flex; gap: 4px; flex: 1; justify-content: center; }
+    .tab-btn {
+      padding: 7px 22px; border: none; border-radius: 9px;
+      background: none; font-size: 13px; font-weight: 600;
+      color: var(--muted); cursor: pointer; transition: all 0.15s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .tab-btn:hover { background: var(--brand-light); color: var(--brand); }
+    .tab-btn.active { background: var(--brand); color: #fff; box-shadow: 0 2px 10px rgba(88,101,242,0.3); }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .topbar-logout {
+      padding: 7px 16px; border: 1.5px solid var(--border); border-radius: 9px;
+      background: none; font-size: 13px; font-weight: 500; color: var(--muted);
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .topbar-logout:hover { border-color: var(--danger); color: var(--danger); background: rgba(237,66,69,0.05); }
+
+    .page { display: none; padding: 36px 40px; max-width: 1140px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    /* ════════════ CARDS ════════════ */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 26px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+    }
+    .card-title {
+      font-size: 14px; font-weight: 700; color: var(--text);
+      margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
+    }
+    .card-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+    .badge {
+      display: inline-block; padding: 2px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; background: var(--brand); color: #fff; letter-spacing: 0.2px;
+    }
+    .badge.green { background: var(--success); }
+    .badge.orange { background: var(--warn); }
+
+    /* ════════════ FORM ════════════ */
+    label.field-label {
+      display: block; font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 7px; margin-top: 16px;
+    }
+    label.field-label:first-child { margin-top: 0; }
+    textarea, input[type=text] {
+      width: 100%; padding: 10px 13px;
+      border: 1.5px solid var(--border); border-radius: 9px;
+      font-size: 13px; font-family: 'Menlo', 'Consolas', monospace;
+      background: var(--surface2); resize: vertical; line-height: 1.6;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+    textarea { min-height: 90px; }
+    textarea:focus, input[type=text]:focus {
+      outline: none; border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-light); background: #fff;
+    }
+
+    /* ── Custom dropdown ── */
+    .select-wrap { position: relative; display: inline-block; }
+    .select-wrap select {
+      appearance: none; -webkit-appearance: none;
+      padding: 10px 40px 10px 14px;
+      border: 1.5px solid var(--border); border-radius: 9px;
+      font-size: 13px; font-weight: 500;
+      background: var(--surface2); cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+      min-width: 160px; color: var(--text);
+    }
+    .select-wrap select:focus {
+      outline: none; border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-light); background: #fff;
+    }
+    .select-wrap::after {
+      content: '';
+      position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
+      width: 0; height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 6px solid var(--muted);
+      pointer-events: none; transition: border-top-color 0.15s;
+    }
+    .select-wrap:focus-within::after { border-top-color: var(--brand); }
+
+    /* ════════════ BUTTONS ════════════ */
+    .row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    button.btn {
+      padding: 9px 18px; border: none; border-radius: 9px; cursor: pointer;
+      font-size: 13px; font-weight: 600; transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    }
+    button.btn:active { transform: scale(0.97); }
+    button.btn.primary { background: var(--brand); color: #fff; box-shadow: 0 2px 8px rgba(88,101,242,0.25); }
+    button.btn.primary:hover { background: var(--brand-dark); box-shadow: 0 4px 14px rgba(88,101,242,0.35); }
+    button.btn.secondary { background: #edf0f7; color: #444; }
+    button.btn.secondary:hover { background: #dde1ed; }
+    button.btn.success { background: var(--success); color: #fff; box-shadow: 0 2px 8px rgba(59,165,92,0.25); }
+    button.btn.success:hover { background: #2d8049; }
+    button.btn.danger { background: var(--danger); color: #fff; }
+    button.btn.danger:hover { background: #c03537; }
+    button.btn.sm { padding: 6px 13px; font-size: 12px; }
+    button.btn.outline { background: none; border: 1.5px solid var(--border); color: var(--text); }
+    button.btn.outline:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-light); }
+    button.btn.ghost { background: none; color: var(--muted); }
+    button.btn.ghost:hover { background: var(--surface2); color: var(--text); }
+
+    /* ════════════ COMPOSER ════════════ */
+    .fmt-toolbar {
+      display: flex; gap: 4px; flex-wrap: wrap;
+      background: var(--surface2); border: 1.5px solid var(--border);
+      border-bottom: none; border-radius: 9px 9px 0 0; padding: 8px 10px;
+    }
+    .fmt-toolbar button {
+      background: var(--surface); color: #333; border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 700;
+      min-width: 34px; cursor: pointer; transition: all 0.15s;
+    }
+    .fmt-toolbar button:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .composer-textarea { min-height: 130px; border-top-left-radius: 0 !important; border-top-right-radius: 0 !important; }
+    .mention-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; min-height: 36px; }
+    .mention-pill {
+      background: var(--brand-light); color: var(--brand);
+      border: 1px solid var(--brand-mid); padding: 5px 13px;
+      border-radius: 20px; font-size: 12px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .mention-pill:hover { background: var(--brand); color: #fff; border-color: var(--brand); transform: translateY(-1px); }
+    .role-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+
+    /* ════════════ TRIGGER GRID ════════════ */
+    .trigger-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px; margin-top: 8px;
+    }
+    .trigger-item {
+      display: flex; flex-direction: column; align-items: flex-start;
+      background: var(--surface2); border: 1.5px solid var(--border);
+      border-radius: 11px; padding: 16px 18px; cursor: pointer;
+      transition: all 0.18s; position: relative; overflow: hidden;
+    }
+    .trigger-item::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, var(--brand-light), transparent);
+      opacity: 0; transition: opacity 0.18s;
+    }
+    .trigger-item:hover { border-color: var(--brand); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(88,101,242,0.12); }
+    .trigger-item:hover::before { opacity: 1; }
+    .trigger-item:active { transform: translateY(0); }
+    .t-icon { font-size: 24px; margin-bottom: 10px; line-height: 1; }
+    .t-label { font-size: 13px; font-weight: 700; color: var(--text); position: relative; }
+    .t-path { font-size: 11px; color: var(--muted); margin-top: 3px; font-family: monospace; position: relative; }
+
+    /* ════════════ TABLE ════════════ */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { background: var(--surface2); }
+    th { text-align: left; padding: 8px 12px; border-bottom: 1.5px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 9px 12px; border-bottom: 1px solid #f0f2f6; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+
+    /* ════════════ RESPONSE ════════════ */
+    .response-wrap { margin-top: 24px; }
+    .response-label {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .response-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    pre {
+      background: #1a1b26; color: #c0caf5; padding: 18px 20px;
+      border-radius: 11px; overflow: auto; font-size: 12px;
+      max-height: 380px; line-height: 1.7; border: 1px solid #2a2d3e;
+    }
+
+    /* ════════════ FILE PREVIEW ════════════ */
+    #filePreview { margin-top: 10px; display: none; align-items: center; gap: 12px; }
+    #filePreviewImg { max-height: 80px; border-radius: 8px; border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+
+    /* ════════════ SECTION TITLE ════════════ */
+    .section-title {
+      font-size: 11px; font-weight: 800; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.7px;
+      margin: 32px 0 12px; display: flex; align-items: center; gap: 10px;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .section-title:first-child { margin-top: 0; }
+
+    /* ════════════ PAGE HEADER ════════════ */
+    .page-header { margin-bottom: 28px; }
+    .page-header h2 { font-size: 22px; font-weight: 800; margin-bottom: 5px; letter-spacing: -0.4px; }
+    .page-header p { font-size: 14px; color: var(--muted); }
+
+    /* ════════════ MODAL ════════════ */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(15,17,30,0.55);
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      z-index: 1000; display: flex; align-items: center; justify-content: center;
+      padding: 24px; opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal-box {
+      background: var(--surface); border-radius: 20px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.2); padding: 36px 36px 28px;
+      width: 100%; max-width: 420px; text-align: center;
+      transform: scale(0.92) translateY(12px);
+      transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+      border: 1px solid var(--border);
+    }
+    .modal-overlay.open .modal-box { transform: scale(1) translateY(0); }
+    .modal-icon { font-size: 44px; margin-bottom: 16px; line-height: 1; display: block; }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 10px; letter-spacing: -0.3px; }
+    .modal-msg { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 28px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: center; }
+    .modal-actions button { min-width: 110px; padding: 10px 20px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; }
+    .modal-cancel { background: #edf0f7; color: #444; }
+    .modal-cancel:hover { background: #dde1ed; }
+    .modal-confirm { background: var(--brand); color: #fff; box-shadow: 0 3px 12px rgba(88,101,242,0.35); }
+    .modal-confirm:hover { background: var(--brand-dark); }
+    .modal-confirm.danger { background: var(--danger); box-shadow: 0 3px 12px rgba(237,66,69,0.35); }
+    .modal-confirm.danger:hover { background: #c03537; }
+
+    /* ════════════ TOAST ════════════ */
+    #toastContainer { position: fixed; bottom: 28px; right: 28px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
+    .toast {
+      background: #1a1b26; color: #c0caf5; padding: 13px 20px;
+      border-radius: 12px; font-size: 13px; font-weight: 500;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+      display: flex; align-items: center; gap: 10px;
+      animation: slideUp 0.3s ease; border-left: 4px solid var(--brand);
+      max-width: 320px;
+    }
+    .toast.success { border-left-color: var(--success); }
+    .toast.error { border-left-color: var(--danger); }
+    @keyframes slideUp { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+<!-- ════════ LOGIN SCREEN ════════ -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">🔔</div>
+    <h1>Twist Digital Notifications</h1>
+    <p class="login-sub">Admin Panel</p>
+    <label class="login-label">API Key</label>
+    <div class="input-wrap">
+      <input id="loginKey" type="password" placeholder="Enter your API key" autocomplete="off" />
+      <button class="eye-btn" type="button" onclick="toggleEye()" id="eyeBtn" title="Show/hide key">
+        <svg id="eyeIconShow" width="18" height="18" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
+        <svg id="eyeIconHide" width="18" height="18" fill="none" viewBox="0 0 24 24" style="display:none"><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div id="loginError"></div>
+    <button class="btn-login" onclick="doLogin()" id="loginBtn">Access Admin →</button>
+    <p class="login-hint">Key is session-only and never stored in browser.</p>
+  </div>
+</div>
+
+<!-- ════════ APP SCREEN ════════ -->
+<div id="appScreen">
+  <div class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-icon">🔔</div>
+      Twist Digital Notifications
+    </div>
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="compose" onclick="switchTab(this,'compose')">✉️ Compose</button>
+      <button class="tab-btn" data-tab="dashboard" onclick="switchTab(this,'dashboard')">⚡ Dashboard</button>
+      <button class="tab-btn" data-tab="settings" onclick="switchTab(this,'settings')">⚙️ Settings</button>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-logout" onclick="confirmLogout()">Sign out</button>
+    </div>
+  </div>
+
+  <!-- ── COMPOSE ── -->
+  <div class="page active" id="page-compose">
+    <div class="page-header">
+      <h2>Discord Message Composer</h2>
+      <p>Post a custom message to any channel directly via the bot</p>
+    </div>
+    <div class="card">
+      <label class="field-label">Channel</label>
+      <div class="select-wrap">
+        <select id="composerChannel" onchange="renderMentionUsers()">
+          <option value="tech">📱 Tech</option>
+          <option value="marketing">📣 Marketing</option>
+          <option value="general">💬 General</option>
+          <option value="tools">🛠 Tools</option>
+        </select>
+      </div>
+
+      <label class="field-label">Message</label>
+      <div class="fmt-toolbar">
+        <button type="button" onclick="fmt('bold')" title="Bold"><b>B</b></button>
+        <button type="button" onclick="fmt('italic')" title="Italic"><i>I</i></button>
+        <button type="button" onclick="fmt('underline')" title="Underline"><u>U</u></button>
+        <button type="button" onclick="fmt('strike')" title="Strikethrough"><s>S</s></button>
+        <button type="button" onclick="fmt('code')" title="Inline code">&#96;c&#96;</button>
+        <button type="button" onclick="fmt('codeblock')" title="Code block">&#96;&#96;&#96;</button>
+        <button type="button" onclick="fmt('quote')" title="Block quote">&gt; q</button>
+        <button type="button" onclick="fmt('spoiler')" title="Spoiler">||s||</button>
+      </div>
+      <textarea id="composerMessage" class="composer-textarea" placeholder="Type your message here… **bold**, *italic*, > quote, `code`"></textarea>
+
+      <label class="field-label">Mention Users</label>
+      <div id="mentionUsers" class="mention-grid">
+        <span style="font-size:12px;color:var(--muted)">Loading…</span>
+      </div>
+
+      <label class="field-label">Mention Roles</label>
+      <div class="role-row">
+        <button class="mention-pill" onclick="insertText('@everyone')">@everyone</button>
+        <button class="mention-pill" onclick="insertText('@here')">@here</button>
+        <span id="savedRoleBtns"></span>
+      </div>
+
+      <label class="field-label">Attach Image <span style="font-size:11px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional — from device)</span></label>
+      <input id="composerFile" type="file" accept="image/*" onchange="onFileSelect()" style="font-size:13px;font-family:sans-serif" />
+      <div id="filePreview">
+        <img id="filePreviewImg" />
+        <button type="button" class="btn sm secondary" onclick="clearFile()">✕ Remove</button>
+      </div>
+
+      <label class="field-label">GIF URL <span style="font-size:11px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional — Giphy link)</span></label>
+      <input type="text" id="composerImage" placeholder="https://media.giphy.com/media/.../giphy.gif" style="font-family:sans-serif" />
+
+      <div class="row" style="margin-top:20px">
+        <button class="btn success" onclick="postComposerMessage()">🚀 Post to Discord</button>
+        <button class="btn ghost sm" onclick="clearComposer()">Clear</button>
+      </div>
+    </div>
+    <div class="response-wrap">
+      <div class="response-label">Response</div>
+      <pre id="out1">—</pre>
+    </div>
+  </div>
+
+  <!-- ── DASHBOARD ── -->
+  <div class="page" id="page-dashboard">
+    <div class="page-header">
+      <h2>Dashboard</h2>
+      <p>Run jobs manually and monitor system status</p>
+    </div>
+    <div class="card">
+      <div class="card-title">🔗 System Status</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn outline" onclick="testDbConnection()">🗄️ Test DB</button>
+        <button class="btn outline" onclick="trigger('/health')">💚 Health</button>
+        <button class="btn outline" onclick="trigger('/ping')">🏓 Ping</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">⚡ Manual Triggers</div>
+      <div class="card-sub">All triggers run asynchronously — response returns immediately while job runs in background</div>
+      <div class="trigger-grid">
+        <div class="trigger-item" onclick="trigger('/daily-updates/reminder')"><div class="t-icon">🕙</div><div class="t-label">Daily Reminder</div><div class="t-path">/daily-updates/reminder</div></div>
+        <div class="trigger-item" onclick="trigger('/daily-updates/noon-check')"><div class="t-icon">🕛</div><div class="t-label">Noon Check</div><div class="t-path">/daily-updates/noon-check</div></div>
+        <div class="trigger-item" onclick="trigger('/daily-updates/evening-reconcile')"><div class="t-icon">🌆</div><div class="t-label">Evening Reconcile</div><div class="t-path">/daily-updates/evening-reconcile</div></div>
+        <div class="trigger-item" onclick="trigger('/test-daily-summary')"><div class="t-icon">📅</div><div class="t-label">Daily Leave Summary</div><div class="t-path">/test-daily-summary</div></div>
+        <div class="trigger-item" onclick="trigger('/test-squad-notification')"><div class="t-icon">👥</div><div class="t-label">Squad Notification</div><div class="t-path">/test-squad-notification</div></div>
+        <div class="trigger-item" onclick="trigger('/test-monthly-summary')"><div class="t-icon">📊</div><div class="t-label">Monthly Summary</div><div class="t-path">/test-monthly-summary</div></div>
+        <div class="trigger-item" onclick="trigger('/test-weekly-summary')"><div class="t-icon">📋</div><div class="t-label">Weekly Summary</div><div class="t-path">/test-weekly-summary</div></div>
+        <div class="trigger-item" onclick="trigger('/check-now')"><div class="t-icon">🔍</div><div class="t-label">Check Now</div><div class="t-path">/check-now</div></div>
+        <div class="trigger-item" onclick="runAllDailyChecks()"><div class="t-icon">▶️</div><div class="t-label">Run All Daily</div><div class="t-path">reminder + noon</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🗄️ Daily Update State</div>
+      <div class="card-sub">View or reset the streak and check-in state stored in MongoDB</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn secondary" onclick="viewState()">👁 View State</button>
+        <button class="btn danger sm" onclick="confirmResetState()">🗑 Reset State</button>
+      </div>
+    </div>
+    <div class="response-wrap">
+      <div class="response-label">Response</div>
+      <pre id="out2">—</pre>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS ── -->
+  <div class="page" id="page-settings">
+    <div class="page-header">
+      <h2>Settings</h2>
+      <p>Manage users, roles, message templates and leave mapping</p>
+    </div>
+
+    <div class="section-title">Channel Users</div>
+    <div class="card">
+      <div class="card-title">Tech Channel <span class="badge">Daily Updates</span></div>
+      <div class="card-sub">User IDs tracked for daily update reminders in the Tech channel.</div>
+      <textarea id="techIds" placeholder="One ID per line or comma separated"></textarea>
+      <div class="row"><button class="btn primary sm" onclick="saveChannel('tech')">💾 Save Tech IDs</button></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Marketing Channel <span class="badge">Daily Updates</span></div>
+      <div class="card-sub">User IDs tracked for daily update reminders in the Marketing channel.</div>
+      <textarea id="marketingIds" placeholder="One ID per line or comma separated"></textarea>
+      <div class="row">
+        <button class="btn primary sm" onclick="saveChannel('marketing')">💾 Save Marketing IDs</button>
+        <button class="btn secondary sm" onclick="seedFromEnv()">Seed From Env</button>
+      </div>
+    </div>
+
+    <div class="section-title">Composer Users &amp; Roles</div>
+    <div class="card">
+      <div class="card-title">All Users <span class="badge green">Composer</span></div>
+      <div class="card-sub">Everyone who can be mentioned in the Compose tab. Independent of daily-update channels.</div>
+      <textarea id="allUserIds" placeholder="One ID per line or comma separated"></textarea>
+      <div class="row"><button class="btn primary sm" onclick="saveAllUsers()">💾 Save All Users</button></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Roles <span class="badge green">Composer</span></div>
+      <div class="card-sub">Role IDs that appear as mention buttons alongside @everyone and @here in the Compose tab.</div>
+      <div id="rolesTable" style="margin-bottom:14px"></div>
+      <div class="row" style="gap:10px;align-items:flex-end">
+        <div>
+          <label class="field-label" style="margin-top:0">Role Name</label>
+          <input type="text" id="newRoleName" placeholder="e.g. Backend" style="width:180px;font-family:sans-serif" />
+        </div>
+        <div>
+          <label class="field-label" style="margin-top:0">Role ID</label>
+          <input type="text" id="newRoleId" placeholder="e.g. 1302204164037804133" style="width:220px" />
+        </div>
+        <button class="btn primary sm" onclick="addRoleRow()" style="margin-top:0;align-self:flex-end">+ Add</button>
+      </div>
+      <div class="row"><button class="btn primary sm" onclick="saveRoles()">💾 Save Roles</button></div>
+    </div>
+
+    <div class="section-title">Message Templates</div>
+    <div class="card">
+      <label class="field-label">Reminder Templates <span style="font-weight:400;text-transform:none;letter-spacing:0">(one per line — picked in rotation)</span></label>
+      <textarea id="msgReminder" placeholder="@everyone Rise and update! Add your daily update before 12:00 PM…"></textarea>
+      <label class="field-label">Missing Update Templates <span style="font-weight:400;text-transform:none;letter-spacing:0">(use {mentions})</span></label>
+      <textarea id="msgMissing" placeholder="Friendly ping {mentions} — we couldn't find your update before noon…"></textarea>
+      <label class="field-label">Shame Templates — 3-day streak <span style="font-weight:400;text-transform:none;letter-spacing:0">(use {mentions})</span></label>
+      <textarea id="msgShame" placeholder="Fun shame mode activated {mentions} — 3-day no-update streak unlocked…"></textarea>
+      <div class="row"><button class="btn primary sm" onclick="saveMessages()">💾 Save Templates</button></div>
+    </div>
+
+    <div class="section-title">Leave Name Mapping</div>
+    <div class="card">
+      <div class="card-title">ClickUp Name → Discord User ID</div>
+      <div class="card-sub">JSON object mapping ClickUp display names to Discord user IDs. Used to exclude users on leave from daily update mentions.</div>
+      <textarea id="leaveMap" style="min-height:180px" placeholder='{"Anushujan":"1117822907696042106"}'></textarea>
+      <div class="row"><button class="btn primary sm" onclick="saveLeaveMap()">💾 Save Leave Map</button></div>
+    </div>
+
+    <div class="response-wrap">
+      <div class="response-label">Response</div>
+      <pre id="out3">—</pre>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MODAL ════════ -->
+<div class="modal-overlay" id="modalOverlay" onclick="modalClickOutside(event)">
+  <div class="modal-box">
+    <span class="modal-icon" id="modalIcon">⚠️</span>
+    <div class="modal-title" id="modalTitle">Confirm</div>
+    <div class="modal-msg" id="modalMsg"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="modal-confirm" id="modalConfirmBtn" onclick="modalResolve(true)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ TOASTS ════════ -->
+<div id="toastContainer"></div>
+
+<script>
+  // ── State ──────────────────────────────
+  let apiKey = '';
+  let channelUserMap = { tech: [], marketing: [] };
+  let allUsersForComposer = [];
+  let discordIdToName = {};
+  let rolesData = [];
+
+  // ── Modal system ───────────────────────
+  let _modalResolve = null;
+  function showModal({ icon='⚠️', title='', msg='', confirmLabel='Confirm', danger=false }) {
+    document.getElementById('modalIcon').textContent = icon;
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalMsg').textContent = msg;
+    const btn = document.getElementById('modalConfirmBtn');
+    btn.textContent = confirmLabel;
+    btn.className = 'modal-confirm' + (danger ? ' danger' : '');
+    document.getElementById('modalOverlay').classList.add('open');
+    return new Promise(res => { _modalResolve = res; });
+  }
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+    if (_modalResolve) { _modalResolve(false); _modalResolve = null; }
+  }
+  function modalResolve(val) {
+    document.getElementById('modalOverlay').classList.remove('open');
+    if (_modalResolve) { _modalResolve(val); _modalResolve = null; }
+  }
+  function modalClickOutside(e) {
+    if (e.target === document.getElementById('modalOverlay')) closeModal();
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  // ── Toast system ───────────────────────
+  function toast(msg, type = '') {
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.innerHTML = (type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️') + ' ' + msg;
+    document.getElementById('toastContainer').appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  // ── Login ──────────────────────────────
+  function toggleEye() {
+    const inp = document.getElementById('loginKey');
+    const show = document.getElementById('eyeIconShow');
+    const hide = document.getElementById('eyeIconHide');
+    if (inp.type === 'password') {
+      inp.type = 'text'; show.style.display = 'none'; hide.style.display = '';
+    } else {
+      inp.type = 'password'; show.style.display = ''; hide.style.display = 'none';
+    }
+  }
+  document.getElementById('loginKey').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+  async function doLogin() {
+    const key = document.getElementById('loginKey').value.trim();
+    const errEl = document.getElementById('loginError');
+    const btn = document.getElementById('loginBtn');
+    if (!key) { errEl.textContent = '⚠️ Please enter your API key.'; return; }
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Verifying…';
+    try {
+      const res = await fetch('/admin/db-status', { headers: { 'x-api-key': key, 'Content-Type': 'application/json' } });
+      if (res.status === 401 || res.status === 403) {
+        errEl.innerHTML = '❌ Invalid API key — please try again.';
+        btn.disabled = false; btn.textContent = 'Access Admin →'; return;
+      }
+      apiKey = key;
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('appScreen').style.display = 'block';
+      loadData();
+    } catch (e) {
+      errEl.textContent = '⚠️ Connection error: ' + e.message;
+      btn.disabled = false; btn.textContent = 'Access Admin →';
+    }
+  }
+
+  async function confirmLogout() {
+    const ok = await showModal({ icon: '👋', title: 'Sign out?', msg: 'Your session will end and the API key will be cleared from memory.', confirmLabel: 'Sign out' });
+    if (!ok) return;
+    apiKey = '';
+    document.getElementById('loginKey').value = '';
+    document.getElementById('loginError').textContent = '';
+    document.getElementById('loginBtn').disabled = false;
+    document.getElementById('loginBtn').textContent = 'Access Admin →';
+    document.getElementById('appScreen').style.display = 'none';
+    document.getElementById('loginScreen').style.display = 'flex';
+  }
+
+  // ── Tabs ───────────────────────────────
+  function switchTab(btn, tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('page-' + tab).classList.add('active');
+  }
+
+  // ── API helpers ────────────────────────
+  function apiHeaders(json = true) {
+    const h = { 'x-api-key': apiKey };
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
+  }
+  function setOut(tab, data) {
+    const id = tab === 1 ? 'out1' : tab === 2 ? 'out2' : 'out3';
+    document.getElementById(id).textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  }
+
+  // ── Load data ──────────────────────────
+  async function loadData() {
+    try {
+      const res = await fetch('/admin/channel-users', { headers: apiHeaders() });
+      const data = await res.json();
+      if (!res.ok) return;
+      document.getElementById('techIds').value = (data.tech || []).join('\n');
+      document.getElementById('marketingIds').value = (data.marketing || []).join('\n');
+      document.getElementById('allUserIds').value = (data.allUsers || []).join('\n');
+      document.getElementById('msgReminder').value = (data.messages?.reminder || []).join('\n');
+      document.getElementById('msgMissing').value = (data.messages?.missing || []).join('\n');
+      document.getElementById('msgShame').value = (data.messages?.shame || []).join('\n');
+      document.getElementById('leaveMap').value = JSON.stringify(data.leaveMap || {}, null, 2);
+      channelUserMap = { tech: data.tech || [], marketing: data.marketing || [] };
+      allUsersForComposer = data.allUsers || [];
+      discordIdToName = {};
+      for (const [name, id] of Object.entries(data.leaveMap || {})) {
+        if (!discordIdToName[id]) discordIdToName[id] = name;
+      }
+      rolesData = data.roles || [];
+      renderMentionUsers(); renderRolesTable(); renderSavedRoleBtns();
+    } catch (e) { console.error('loadData failed', e); }
+  }
+
+  // ── Composer ───────────────────────────
+  function renderMentionUsers() {
+    const channel = document.getElementById('composerChannel').value;
+    const ids = allUsersForComposer.length > 0 ? allUsersForComposer : (channelUserMap[channel] || []);
+    const c = document.getElementById('mentionUsers');
+    if (ids.length === 0) {
+      c.innerHTML = '<span style="font-size:12px;color:var(--muted)">No users — add IDs in Settings → All Users.</span>'; return;
+    }
+    c.innerHTML = ids.map(id => {
+      const name = discordIdToName[id];
+      const label = name ? name.split(' ')[0] : ('\u00b7' + id.slice(-4));
+      return `<button class="mention-pill mention-btn" data-mention=" <@${id}>" title="${name || id}">${label}</button>`;
+    }).join('');
+  }
+
+  function renderRolesTable() {
+    const c = document.getElementById('rolesTable');
+    if (!c) return;
+    if (rolesData.length === 0) { c.innerHTML = '<p style="font-size:13px;color:var(--muted)">No roles added yet.</p>'; return; }
+    c.innerHTML = '<table><thead><tr><th>Name</th><th>Role ID</th><th></th></tr></thead><tbody>' +
+      rolesData.map((r, i) =>
+        `<tr><td><strong>${r.name}</strong></td><td style="font-family:monospace;color:var(--muted)">${r.id}</td>
+         <td style="text-align:right"><button class="btn sm secondary" data-remove-role="${i}">Remove</button></td></tr>`
+      ).join('') + '</tbody></table>';
+  }
+
+  function renderSavedRoleBtns() {
+    const c = document.getElementById('savedRoleBtns');
+    if (!c) return;
+    c.innerHTML = rolesData.map(r =>
+      `<button class="mention-pill mention-btn" data-mention=" <@&${r.id}>" title="${r.id}">@${r.name}</button>`
+    ).join('');
+  }
+
+  function addRoleRow() {
+    const name = document.getElementById('newRoleName').value.trim();
+    const id = document.getElementById('newRoleId').value.trim();
+    if (!name || !id) { toast('Enter both role name and ID.', 'error'); return; }
+    if (!/^\d{15,25}$/.test(id)) { toast('Role ID must be 15–25 digits.', 'error'); return; }
+    if (rolesData.find(r => r.id === id)) { toast('That role ID is already added.', 'error'); return; }
+    rolesData.push({ name, id });
+    document.getElementById('newRoleName').value = '';
+    document.getElementById('newRoleId').value = '';
+    renderRolesTable(); renderSavedRoleBtns();
+    toast('Role added — click Save Roles to persist.', '');
+  }
+
+  async function saveRoles() {
+    try {
+      const res = await fetch('/admin/roles', { method: 'PUT', headers: apiHeaders(), body: JSON.stringify({ roles: rolesData }) });
+      const d = await res.json(); setOut(3, d);
+      toast(res.ok ? 'Roles saved!' : 'Save failed.', res.ok ? 'success' : 'error');
+    } catch (e) { setOut(3, String(e)); toast('Error saving roles.', 'error'); }
+  }
+
+  function fmt(type) {
+    const ta = document.getElementById('composerMessage');
+    const s = ta.selectionStart, e = ta.selectionEnd, sel = ta.value.substring(s, e);
+    const ph = {bold:'text',italic:'text',underline:'text',strike:'text',code:'code',codeblock:'code',quote:'quote',spoiler:'text'}[type]||'text';
+    const w = sel || ph;
+    let r;
+    if      (type==='bold')      r='**'+w+'**';
+    else if (type==='italic')    r='*'+w+'*';
+    else if (type==='underline') r='__'+w+'__';
+    else if (type==='strike')    r='~~'+w+'~~';
+    else if (type==='code')      r='`'+w+'`';
+    else if (type==='codeblock') r='```\n'+w+'\n```';
+    else if (type==='quote')     r='> '+w;
+    else if (type==='spoiler')   r='||'+w+'||';
+    else r=w;
+    ta.value = ta.value.substring(0,s)+r+ta.value.substring(e);
+    ta.selectionStart=s; ta.selectionEnd=s+r.length; ta.focus();
+  }
+
+  function insertText(text) {
+    const ta = document.getElementById('composerMessage');
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const before = ta.value.substring(0,s), after = ta.value.substring(e);
+    const sp = (before.length>0 && !before.endsWith(' '))?' ':'';
+    const sa = (after.length>0 && !after.startsWith(' '))?' ':'';
+    ta.value = before+sp+text+sa+after;
+    ta.selectionStart = ta.selectionEnd = s+sp.length+text.length+sa.length;
+    ta.focus();
+  }
+
+  function onFileSelect() {
+    const inp = document.getElementById('composerFile');
+    const preview = document.getElementById('filePreview');
+    const img = document.getElementById('filePreviewImg');
+    if (inp.files && inp.files[0]) { img.src = URL.createObjectURL(inp.files[0]); preview.style.display='flex'; }
+    else preview.style.display='none';
+  }
+  function clearFile() {
+    document.getElementById('composerFile').value='';
+    document.getElementById('filePreview').style.display='none';
+    document.getElementById('filePreviewImg').src='';
+  }
+  function clearComposer() {
+    document.getElementById('composerMessage').value='';
+    document.getElementById('composerImage').value='';
+    clearFile();
+  }
+
+  async function postComposerMessage() {
+    const channelKey = document.getElementById('composerChannel').value;
+    const content = document.getElementById('composerMessage').value.trim();
+    const imageUrl = document.getElementById('composerImage').value.trim();
+    const fileInput = document.getElementById('composerFile');
+    const file = fileInput.files && fileInput.files[0];
+    if (!content) { toast('Message content cannot be empty.', 'error'); return; }
+    try {
+      let res;
+      if (file) {
+        const form = new FormData();
+        form.append('channelKey', channelKey); form.append('content', content); form.append('image', file, file.name);
+        res = await fetch('/admin/post-message', { method:'POST', headers: apiHeaders(false), body: form });
+      } else {
+        res = await fetch('/admin/post-message', { method:'POST', headers: apiHeaders(), body: JSON.stringify({channelKey, content, imageUrl: imageUrl||undefined}) });
+      }
+      const data = await res.json();
+      setOut(1, {action:'post-message', channel:channelKey, status:res.status, data});
+      if (res.ok) { clearComposer(); toast('Message posted to Discord!', 'success'); }
+      else toast('Failed to post message.', 'error');
+    } catch (e) { setOut(1, String(e)); toast('Error posting message.', 'error'); }
+  }
+
+  // ── Dashboard ──────────────────────────
+  async function testDbConnection() {
+    try {
+      const res = await fetch('/admin/db-status', { headers: apiHeaders() });
+      const d = await res.json(); setOut(2, d);
+      toast(d.ok ? 'DB connected ✓' : 'DB connection issue', d.ok ? 'success' : 'error');
+    } catch (e) { setOut(2, String(e)); }
+  }
+
+  async function trigger(path) {
+    try {
+      const res = await fetch(path, { headers: apiHeaders() });
+      const data = await res.json();
+      setOut(2, {endpoint:path, status:res.status, data});
+      toast(res.ok ? 'Triggered: '+path : 'Error: '+path, res.ok?'success':'error');
+    } catch (e) { setOut(2, String(e)); }
+  }
+
+  async function runAllDailyChecks() {
+    try {
+      const h = apiHeaders();
+      const r1 = await fetch('/daily-updates/reminder', {headers:h});
+      const r2 = await fetch('/daily-updates/noon-check', {headers:h});
+      setOut(2, {action:'run-all-daily-checks', reminder:{status:r1.status, data:await r1.json()}, noonCheck:{status:r2.status, data:await r2.json()}});
+      toast('All daily checks triggered!', 'success');
+    } catch (e) { setOut(2, String(e)); }
+  }
+
+  async function viewState() {
+    try {
+      const res = await fetch('/admin/daily-config/state', {headers:apiHeaders()});
+      setOut(2, await res.json());
+    } catch (e) { setOut(2, String(e)); }
+  }
+
+  async function confirmResetState() {
+    const ok = await showModal({
+      icon: '🗑️', title: 'Reset Daily State?',
+      msg: 'This will clear all streak counts and check-in records. This action cannot be undone.',
+      confirmLabel: 'Yes, Reset', danger: true
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch('/admin/daily-config/state/reset', {method:'POST', headers:apiHeaders()});
+      setOut(2, await res.json());
+      toast('Daily state reset successfully.', 'success');
+    } catch (e) { setOut(2, String(e)); }
+  }
+
+  // ── Settings ───────────────────────────
+  async function saveChannel(channelKey) {
+    const value = channelKey==='tech' ? document.getElementById('techIds').value : document.getElementById('marketingIds').value;
+    try {
+      const res = await fetch('/admin/channel-users/'+channelKey, {method:'PUT', headers:apiHeaders(), body:JSON.stringify({userIds:value})});
+      setOut(3, await res.json());
+      if (res.ok) { loadData(); toast(channelKey+' IDs saved!', 'success'); }
+      else toast('Save failed.', 'error');
+    } catch (e) { setOut(3, String(e)); }
+  }
+
+  async function saveAllUsers() {
+    try {
+      const res = await fetch('/admin/all-users', {method:'PUT', headers:apiHeaders(), body:JSON.stringify({userIds:document.getElementById('allUserIds').value})});
+      setOut(3, await res.json());
+      if (res.ok) { loadData(); toast('All users saved!', 'success'); }
+    } catch (e) { setOut(3, String(e)); }
+  }
+
+  async function saveMessages() {
+    try {
+      const res = await fetch('/admin/daily-config/messages', {
+        method:'PUT', headers:apiHeaders(),
+        body: JSON.stringify({reminder:document.getElementById('msgReminder').value, missing:document.getElementById('msgMissing').value, shame:document.getElementById('msgShame').value})
+      });
+      setOut(3, await res.json());
+      if (res.ok) toast('Templates saved!', 'success');
+    } catch (e) { setOut(3, String(e)); }
+  }
+
+  async function saveLeaveMap() {
+    try {
+      const parsed = JSON.parse(document.getElementById('leaveMap').value || '{}');
+      const res = await fetch('/admin/daily-config/leave-map', {method:'PUT', headers:apiHeaders(), body:JSON.stringify({map:parsed})});
+      setOut(3, await res.json());
+      if (res.ok) { loadData(); toast('Leave map saved!', 'success'); }
+    } catch (e) { setOut(3, 'Invalid JSON: '+String(e)); toast('Invalid JSON format.', 'error'); }
+  }
+
+  async function seedFromEnv() {
+    try {
+      const res = await fetch('/admin/channel-users/seed-from-env', {method:'POST', headers:apiHeaders()});
+      setOut(3, await res.json());
+      if (res.ok) { loadData(); toast('Seeded from env!', 'success'); }
+    } catch (e) { setOut(3, String(e)); }
+  }
+
+  // ── Global delegation ──────────────────
+  document.addEventListener('click', async e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.mention !== undefined) { insertText(btn.dataset.mention); return; }
+    if (btn.dataset.removeRole !== undefined) {
+      const idx = Number(btn.dataset.removeRole);
+      const roleName = rolesData[idx]?.name || 'this role';
+      const ok = await showModal({
+        icon: '🗑️', title: 'Remove Role?',
+        msg: `Remove "${roleName}" from the roles list? Click Save Roles after to persist the change.`,
+        confirmLabel: 'Remove', danger: true
+      });
+      if (!ok) return;
+      rolesData.splice(idx, 1);
+      renderRolesTable(); renderSavedRoleBtns();
+      toast('Role removed — save to persist.', '');
+    }
+  });
+</script>
+</body>
+</html>

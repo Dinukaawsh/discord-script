@@ -7,313 +7,32 @@ import {
   Param,
   Post,
   Put,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ChannelKey, ChannelUsersService } from './channel-users.service';
+import { DailyUpdatesService } from '../daily-updates/daily-updates.service';
 import { Public } from '../auth/public.decorator';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Controller()
 export class ChannelUsersController {
-  constructor(private readonly channelUsers: ChannelUsersService) {}
+  constructor(
+    private readonly channelUsers: ChannelUsersService,
+    private readonly dailyUpdates: DailyUpdatesService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Public()
   @Get('admin')
   @Header('Content-Type', 'text/html')
   adminPage(): string {
-    return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Leave Notification Admin</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; max-width: 900px; }
-    h2 { margin-top: 28px; }
-    textarea { width: 100%; min-height: 100px; font-family: monospace; }
-    .row { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
-    button { padding: 8px 12px; cursor: pointer; }
-    input[type=text] { width: 100%; padding: 8px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin: 12px 0; }
-    pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow: auto; }
-    .muted { color: #666; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <h1>Leave Notification Admin</h1>
-  <div class="card">
-    <label>API Key (for protected endpoints)</label>
-    <input id="apiKey" type="text" placeholder="Paste API_KEY here" />
-    <div class="row">
-      <button onclick="testDbConnection()">Test DB Connection</button>
-    </div>
-    <div class="muted">This page is public, but admin actions require API key in requests.</div>
-  </div>
-
-  <h2>Channel User IDs</h2>
-  <div class="card">
-    <strong>Tech User IDs</strong>
-    <textarea id="techIds" placeholder="One ID per line or comma separated"></textarea>
-    <div class="row">
-      <button onclick="saveChannel('tech')">Save Tech IDs</button>
-    </div>
-  </div>
-  <div class="card">
-    <strong>Marketing User IDs</strong>
-    <textarea id="marketingIds" placeholder="One ID per line or comma separated"></textarea>
-    <div class="row">
-      <button onclick="saveChannel('marketing')">Save Marketing IDs</button>
-      <button onclick="seedFromEnv()">Seed Both From Env</button>
-      <button onclick="loadUsers()">Refresh</button>
-    </div>
-  </div>
-
-  <h2>Message Templates (Mongo)</h2>
-  <div class="card">
-    <strong>Reminder Templates (one per line)</strong>
-    <textarea id="msgReminder" placeholder="Each line is one template"></textarea>
-    <strong>Missing Templates (one per line)</strong>
-    <textarea id="msgMissing" placeholder="Use {mentions} placeholder"></textarea>
-    <strong>Shame Templates (one per line)</strong>
-    <textarea id="msgShame" placeholder="Use {mentions} placeholder"></textarea>
-    <div class="row">
-      <button onclick="saveMessages()">Save Templates</button>
-    </div>
-  </div>
-
-  <h2>Leave Name Mapping (Mongo)</h2>
-  <div class="card">
-    <strong>ClickUp Name -> Discord User ID JSON</strong>
-    <textarea id="leaveMap" placeholder='{"Anushujan":"1117822907696042106"}'></textarea>
-    <div class="row">
-      <button onclick="saveLeaveMap()">Save Leave Map</button>
-    </div>
-  </div>
-
-  <h2>Daily State (Mongo)</h2>
-  <div class="card">
-    <div class="row">
-      <button onclick="viewState()">View Current State</button>
-      <button onclick="resetState()">Reset State</button>
-    </div>
-  </div>
-
-  <h2>Manual Triggers</h2>
-  <div class="card">
-    <div class="row">
-      <button onclick="runAllDailyChecks()">Run All Daily Checks</button>
-      <button onclick="trigger('/check-now')">Check Now</button>
-      <button onclick="trigger('/test-daily-summary')">Daily Leave Summary</button>
-      <button onclick="trigger('/test-monthly-summary')">Monthly Leave Summary</button>
-      <button onclick="trigger('/test-weekly-summary')">Weekly Leave Summary</button>
-      <button onclick="trigger('/test-squad-notification')">Squad Notification</button>
-      <button onclick="trigger('/daily-updates/reminder')">Daily Reminder</button>
-      <button onclick="trigger('/daily-updates/noon-check')">Daily Noon Check</button>
-      <button onclick="trigger('/daily-updates/evening-reconcile')">Daily Evening Reconcile</button>
-    </div>
-  </div>
-
-  <h2>Response</h2>
-  <pre id="out">Ready</pre>
-
-  <script>
-    const out = document.getElementById('out');
-    const apiKeyInput = document.getElementById('apiKey');
-    const techIds = document.getElementById('techIds');
-    const marketingIds = document.getElementById('marketingIds');
-    const msgReminder = document.getElementById('msgReminder');
-    const msgMissing = document.getElementById('msgMissing');
-    const msgShame = document.getElementById('msgShame');
-    const leaveMap = document.getElementById('leaveMap');
-
-    const API_KEY_STORAGE_KEY = 'leave_notification_admin_api_key';
-    let apiLoadTimer = null;
-
-    function apiHeaders() {
-      const apiKey = apiKeyInput.value.trim();
-      const headers = { 'Content-Type': 'application/json' };
-      if (apiKey) headers['x-api-key'] = apiKey;
-      return headers;
-    }
-
-    function setOut(data) {
-      out.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-    }
-
-    async function loadUsers() {
-      try {
-        if (!apiKeyInput.value.trim()) {
-          setOut('Enter API key to load channel users and config data.');
-          return;
-        }
-        const res = await fetch('/admin/channel-users', { headers: apiHeaders() });
-        const data = await res.json();
-        if (!res.ok) {
-          if (res.status === 401 || res.status === 403) {
-            return setOut('Unauthorized. Add valid API key, then click Refresh.');
-          }
-          return setOut(data);
-        }
-        techIds.value = (data.tech || []).join('\\n');
-        marketingIds.value = (data.marketing || []).join('\\n');
-        msgReminder.value = (data.messages?.reminder || []).join('\\n');
-        msgMissing.value = (data.messages?.missing || []).join('\\n');
-        msgShame.value = (data.messages?.shame || []).join('\\n');
-        leaveMap.value = JSON.stringify(data.leaveMap || {}, null, 2);
-        setOut(data);
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function testDbConnection() {
-      try {
-        const res = await fetch('/admin/db-status', { headers: apiHeaders() });
-        const data = await res.json();
-        setOut(data);
-        if (res.ok && data && data.ok) {
-          await loadUsers();
-        }
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function saveChannel(channelKey) {
-      const value = channelKey === 'tech' ? techIds.value : marketingIds.value;
-      try {
-        const res = await fetch('/admin/channel-users/' + channelKey, {
-          method: 'PUT',
-          headers: apiHeaders(),
-          body: JSON.stringify({ userIds: value }),
-        });
-        const data = await res.json();
-        setOut(data);
-        if (res.ok) loadUsers();
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function seedFromEnv() {
-      try {
-        const res = await fetch('/admin/channel-users/seed-from-env', {
-          method: 'POST',
-          headers: apiHeaders(),
-        });
-        const data = await res.json();
-        setOut(data);
-        if (res.ok) loadUsers();
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function trigger(path) {
-      try {
-        const res = await fetch(path, { headers: apiHeaders() });
-        const data = await res.json();
-        setOut({ endpoint: path, status: res.status, data });
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function runAllDailyChecks() {
-      try {
-        const headers = apiHeaders();
-        const reminderRes = await fetch('/daily-updates/reminder', { headers });
-        const reminderData = await reminderRes.json();
-        const noonRes = await fetch('/daily-updates/noon-check', { headers });
-        const noonData = await noonRes.json();
-        setOut({
-          action: 'run-all-daily-checks',
-          reminder: { status: reminderRes.status, data: reminderData },
-          noonCheck: { status: noonRes.status, data: noonData },
-        });
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function saveMessages() {
-      try {
-        const res = await fetch('/admin/daily-config/messages', {
-          method: 'PUT',
-          headers: apiHeaders(),
-          body: JSON.stringify({
-            reminder: msgReminder.value,
-            missing: msgMissing.value,
-            shame: msgShame.value,
-          }),
-        });
-        const data = await res.json();
-        setOut(data);
-        if (res.ok) loadUsers();
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function saveLeaveMap() {
-      try {
-        const parsed = JSON.parse(leaveMap.value || '{}');
-        const res = await fetch('/admin/daily-config/leave-map', {
-          method: 'PUT',
-          headers: apiHeaders(),
-          body: JSON.stringify({ map: parsed }),
-        });
-        const data = await res.json();
-        setOut(data);
-        if (res.ok) loadUsers();
-      } catch (e) {
-        setOut('Invalid JSON for leave map: ' + String(e));
-      }
-    }
-
-    async function viewState() {
-      try {
-        const res = await fetch('/admin/daily-config/state', { headers: apiHeaders() });
-        const data = await res.json();
-        setOut(data);
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    async function resetState() {
-      try {
-        const res = await fetch('/admin/daily-config/state/reset', {
-          method: 'POST',
-          headers: apiHeaders(),
-        });
-        const data = await res.json();
-        setOut(data);
-      } catch (e) {
-        setOut(String(e));
-      }
-    }
-
-    apiKeyInput.addEventListener('input', () => {
-      try {
-        localStorage.setItem(API_KEY_STORAGE_KEY, apiKeyInput.value.trim());
-      } catch (_) {}
-      if (apiLoadTimer) {
-        clearTimeout(apiLoadTimer);
-      }
-      apiLoadTimer = setTimeout(() => {
-        loadUsers();
-      }, 300);
-    });
-
-    try {
-      const savedApiKey = localStorage.getItem(API_KEY_STORAGE_KEY) || '';
-      if (savedApiKey) {
-        apiKeyInput.value = savedApiKey;
-      }
-    } catch (_) {}
-
-    loadUsers();
-  </script>
-</body>
-</html>`;
+    // __dirname is dist/channel-users/ after build; admin.html lives at dist/admin/admin.html
+    const htmlPath = path.join(__dirname, '..', 'admin', 'admin.html');
+    return fs.readFileSync(htmlPath, 'utf8');
   }
 
   @Get('admin/channel-users')
@@ -328,6 +47,12 @@ export class ChannelUsersController {
       leaveMap,
       ...data,
     };
+  }
+
+  @Put('admin/all-users')
+  async saveAllUsers(@Body('userIds') userIds: string | string[]) {
+    const saved = await this.channelUsers.setAllUsers(userIds || '');
+    return { success: true, count: saved.length, userIds: saved };
   }
 
   @Get('admin/db-status')
@@ -406,6 +131,54 @@ export class ChannelUsersController {
       success: true,
       message: 'Daily update state reset successfully',
     };
+  }
+
+  @Get('admin/roles')
+  async getRoles() {
+    const roles = await this.channelUsers.getRoles();
+    return { success: true, roles };
+  }
+
+  @Put('admin/roles')
+  async saveRoles(@Body('roles') roles: Array<{ name: string; id: string }>) {
+    const saved = await this.channelUsers.setRoles(roles || []);
+    return { success: true, count: saved.length, roles: saved };
+  }
+
+  @Post('admin/post-message')
+  @UseInterceptors(FileInterceptor('image'))
+  async postMessage(
+    @Body('channelKey') channelKey: string,
+    @Body('content') content: string,
+    @Body('imageUrl') imageUrl?: string,
+    @UploadedFile() image?: Express.Multer.File,
+  ) {
+    const channelId = this.resolveComposerChannelId(channelKey);
+    if (!content?.trim()) throw new BadRequestException('Message content is required');
+    const fileAttachment = image
+      ? { data: image.buffer, name: image.originalname, contentType: image.mimetype }
+      : undefined;
+    await this.dailyUpdates.broadcastMessage(
+      channelId,
+      content.trim(),
+      fileAttachment ? undefined : imageUrl?.trim(),
+      fileAttachment,
+    );
+    return { success: true, channelKey, channelId, attachedFile: image?.originalname };
+  }
+
+  private resolveComposerChannelId(channelKey: string): string {
+    const envMap: Record<string, string> = {
+      tech: 'TECH_UPDATES_CHANNEL_ID',
+      marketing: 'MARKETING_UPDATES_CHANNEL_ID',
+      general: 'GENERAL_CHANNEL_ID',
+      tools: 'TOOLS_CHANNEL_ID',
+    };
+    const envKey = envMap[channelKey];
+    if (!envKey) throw new BadRequestException(`Unknown channelKey: ${channelKey}`);
+    const channelId = this.config.get<string>(envKey);
+    if (!channelId) throw new BadRequestException(`${envKey} is not configured in environment`);
+    return channelId;
   }
 
   private validateChannelKey(value: string): ChannelKey {
