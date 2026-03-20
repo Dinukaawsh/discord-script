@@ -14,7 +14,7 @@
     "lambda:invoke": "node -e \"require('./dist/lambda').handler({ schedule: 'daily' }).then(r => console.log(r))\""
   },
   "dependencies": {
-    "@discordjs/rest": "^2.6.0",
+    "@discordjs/rest": "^0.4.1",
     "@nestjs/common": "^11.1.16",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.1.16",
