@@ -4,7 +4,7 @@
   "description": "Discord notifications for ClickUp leave form submissions (NestJS + Lambda)",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json --outDir dist",
+    "build": "tsc -p tsconfig.json --outDir dist && node -e \"const fs=require('fs');fs.mkdirSync('dist/admin',{recursive:true});fs.copyFileSync('src/admin/admin.html','dist/admin/admin.html');\"",
     "start": "npm run build && node run.js",
     "start:dev": "npm run build && npx concurrently -k \"tsc -p tsconfig.json -w --outDir dist\" \"npx wait-on dist/main.js -t 60000 && npx nodemon --watch dist --ext js --exec 'node dist/main.js'\"",
     "serve": "node dist/main.js",
